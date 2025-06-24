@@ -1,9 +1,15 @@
+using Microsoft.EntityFrameworkCore;
 using ProductivityQuestManager.Components;
+using ProductivityQuestManager.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-builder.Services.AddRazorComponents()
+// This creates a local SQLite file
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite("Data Source=app.db"));
+
+    // Add services to the container.
+    builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 var app = builder.Build();
@@ -14,6 +20,13 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
+}
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate(); // Ensure DB is up-to-date
+    DbInitializer.Seed(db); // Seed mock data
 }
 
 app.UseHttpsRedirection();
