@@ -26,7 +26,7 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.Migrate(); // Ensure DB is up-to-date
-    DbInitializer.Seed(db); // Seed mock data
+    DbInitializer.Seed(db, false); // Seed mock data
 }
 
 app.UseHttpsRedirection();

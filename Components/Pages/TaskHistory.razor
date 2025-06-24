@@ -1,0 +1,46 @@
+﻿@page "/history"
+@rendermode InteractiveServer
+@using ProductivityQuestManager.Data
+@using Microsoft.EntityFrameworkCore;
+@inject AppDbContext Db
+
+<h2 class="text-xl font-bold mb-4">🕘 Task History</h2>
+
+@if (questResults == null)
+{
+    <p>Loading...</p>
+}
+else if (!questResults.Any())
+{
+    <p>No completed tasks yet.</p>
+}
+else
+{
+    <ul class="space-y-3">
+        @foreach (var result in questResults)
+        {
+            <li class="border p-3 rounded bg-gray-100 shadow">
+                <strong>@result.Quest?.Name</strong><br />
+                Unit: @result.Unit?.Name<br />
+                XP: @result.ExperienceGained<br />
+                Completed: @result.CompletedAt.ToLocalTime().ToString("g")<br />
+                Outcome: @result.OutcomeSummary
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    private List<QuestResult>? questResults;
+
+    protected override void OnInitialized()
+    {
+        questResults = Db.QuestResults
+            .Include(q => q.Unit)
+            .Include(q => q.Quest)
+            .OrderByDescending(q => q.CompletedAt)
+            .Take(50) // Optional limit
+            .ToList();
+    }
+}
+
