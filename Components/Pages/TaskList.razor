@@ -1,0 +1,122 @@
+﻿@page "/tasks"
+@using ProductivityQuestManager.Data
+@inject AppDbContext Db
+
+<h2 class="text-xl font-bold mb-4">Your Tasks</h2>
+
+@if (tasks == null)
+{
+    <p>Loading tasks...</p>
+}
+else if (!tasks.Any())
+{
+    <p>No tasks found.</p>
+}
+else
+{
+    <ul class="space-y-3">
+        @foreach (var task in tasks)
+        {
+            <li class="border p-3 rounded bg-white shadow">
+                <strong>@task.Title</strong><br />
+                Duration: @task.DurationMinutes minutes<br />
+                Completed: @(task.IsCompleted ? "✅" : "❌")
+
+                @if (!task.IsCompleted)
+                {
+                    <button class="btn btn-primary" @onclick="() => StartTask(task)">▶ Start</button>
+                }
+            </li>
+        }
+    </ul>
+}
+
+@if (activeTask != null)
+{
+    <div class="mt-4 p-4 border bg-yellow-100 rounded">
+        <strong>Working on:</strong> @activeTask.Title<br />
+        Time Remaining: @timeLeft minutes
+    </div>
+}
+@code {
+    private List<TaskModel>? tasks;
+    private TaskModel? activeTask;
+    private int timeLeft;
+
+    protected override void OnInitialized()
+    {
+        tasks = Db.Tasks.ToList();
+    }
+    private Random rng = new Random();  // For picking random units
+
+    private async Task StartTask(TaskModel task)
+    {
+        activeTask = task;
+        timeLeft = task.DurationMinutes;
+
+        // 🪖 Randomly select a unit
+        var availableUnits = Db.Units.ToList();
+        if (availableUnits.Count == 0)
+        {
+            Console.WriteLine("No units available!");
+            return;
+        }
+
+        var unit = availableUnits[rng.Next(availableUnits.Count)];
+
+        // 🗺️ Create a quest
+        var quest = new Quest
+        {
+            Name = $"Quest for {task.Title}",
+            DurationMinutes = task.DurationMinutes,
+            StartedAt = DateTime.UtcNow
+        };
+        Db.Quests.Add(quest);
+        Db.SaveChanges();
+
+        // Simulate timer countdown (1 min per second)
+        while (timeLeft > 0)
+        {
+            await Task.Delay(1000); // Wait 1 second
+            timeLeft--;
+            StateHasChanged();
+        }
+
+        // Mark task complete
+        task.IsCompleted = true;
+        Db.Update(task);
+        Db.SaveChanges();
+
+        // 🎯 Create a quest result
+        var result = new QuestResult
+        {
+            QuestId = quest.Id,
+            UnitId = unit.Id,
+            WasSuccessful = true,
+            CompletedAt = DateTime.UtcNow,
+            OutcomeSummary = $"Task '{task.Title}' completed on time by {unit.Name}.",
+            ExperienceGained = 10 + rng.Next(10), // Random XP between 10–20
+            Loot = "Basic Loot Chest"
+        };
+        Db.QuestResults.Add(result);
+
+        // 💪 Give unit some XP
+        unit.Experience += result.ExperienceGained;
+        if (unit.Experience >= unit.ExperienceToNextLevel)
+        {
+            unit.Level += 1;
+            unit.Experience = 0;
+            unit.ExperienceToNextLevel += 50;
+        }
+        Db.Update(unit);
+        Db.SaveChanges();
+
+
+        // Reset state
+        activeTask = null;
+        timeLeft = 0;
+
+        // Refresh task list
+        tasks = Db.Tasks.ToList();
+    }
+}

@@ -4,13 +4,13 @@ using ProductivityQuestManager.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// This creates a local SQLite file
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite("Data Source=app.db"));
-
     // Add services to the container.
     builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+// This creates a local SQLite file
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite("Data Source=app.db"));
 
 var app = builder.Build();
 
