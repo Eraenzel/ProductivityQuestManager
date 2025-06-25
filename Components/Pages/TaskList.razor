@@ -3,10 +3,11 @@
 @using Microsoft.AspNetCore.Components.Forms
 @using ProductivityQuestManager.Data
 @inject AppDbContext Db
+@inject TaskManagerService TaskService
 @implements IDisposable
 
 @* Active unit *@
-<h3 class="font-semibold">🎯 Active Unit</h3>
+<h3 class="font-semibold">Active Unit</h3>
 
 <select class="border p-2 rounded mb-4" @onchange="HandleUnitSelection">
     <option value="">-- Choose Unit --</option>
@@ -25,11 +26,11 @@
 @* Tasks *@
 <h2 class="text-xl font-bold mb-4">Your Tasks</h2>
 
-@if (tasks == null)
+@if (TaskService.Tasks == null)
 {
     <p>Loading tasks...</p>
 }
-else if (!tasks.Any())
+else if (!TaskService.Tasks.Any())
 {
     <p>No tasks found.</p>
 }
@@ -37,11 +38,9 @@ else
 {
     
     <ul class="space-y-3">
-        @foreach (var task in tasks.Where(t => !t.IsCompleted || t.IsRepeatable))
+        @foreach (var task in TaskService.Tasks.Where(t => !t.IsCompleted || t.IsRepeatable))
         {
-            var isCoolingDown = task.IsRepeatable &&
-            task.LastCompletedAt != null &&
-            DateTime.UtcNow < task.LastCompletedAt.Value.AddMinutes(task.CooldownMinutes); 
+            var isCoolingDown = TaskService.IsCoolingDown(task);
 
             <li class="border p-3 rounded bg-white shadow">
                 <strong>@task.Title</strong><br />
@@ -57,30 +56,29 @@ else
                     <p class="text-sm text-red-500">Select a unit to start a task.</p>
                 }
 
-                @if (!task.IsCompleted || task.IsRepeatable)
-                {
-                    task.IsCoolingDown = isCoolingDown;
-                    <button class="btn btn-primary" @onclick="@(() => StartTaskAsync(task))"
-                                >
-                        ▶ Start
-                    </button>
-                    <button class="btn btn-danger" @onclick="@(() => DeleteTask(task))"
-                            disabled="@(activeTask != null && activeTask.Id == task.Id)">
-                        🗑 Delete
-                    </button>
-                
-                    @if (isCoolingDown)
-                    {
-                        var cooldownEnd = task.LastCompletedAt.Value.AddMinutes(task.CooldownMinutes);
-                        var remaining = cooldownEnd - DateTime.UtcNow;
+                <button class="btn btn-primary" @onclick="() => StartTask(task)"
+                        >                   
+					▶ Start
+				</button>
+                <button class="btn btn-danger" @onclick="() => TaskService.DeleteTask(task)"
+                        disabled="@((TaskService.ActiveTask != null && TaskService.ActiveTask.Id == task.Id))">
+                    🗑 Delete
+                </button>
 
-					    <div class="text-yellow-600">
-						    ⏳ On cooldown for: @((int)remaining.TotalMinutes) min
-						    @remaining.Seconds sec remaining
-					    </div>
-                    }  
-                }
-                else
+                @if (isCoolingDown && task.LastCompletedAt != null)
+				{
+					var cooldownEnd = task.LastCompletedAt.Value.AddMinutes(task.CooldownMinutes);
+					var remaining = cooldownEnd - DateTime.UtcNow;
+
+					<div class="text-yellow-600">
+						⏳ On cooldown for: @((int)remaining.TotalMinutes) min
+						@remaining.Seconds sec remaining   
+					</div>
+                    <button class="mt-2 px-2 py-1 bg-red-300 text-black rounded" @onclick="() => CancelCooldown(task)">
+                        Cancel Cooldown (Debug)
+                    </button>
+				}				
+                else if (isCoolingDown)
                 {
                     <span class="text-green-700">✅ Completed</span>
                 }
@@ -91,35 +89,35 @@ else
 }
 
 @* Active task *@
-@if (activeTask != null)
+@if (TaskService.ActiveTask != null && TaskService.ActiveTask.StartedAt != null)
 {
-    var endTime = activeTask.StartedAt.Value.AddMinutes(activeTask.DurationMinutes);
+    var endTime = TaskService.ActiveTask.StartedAt.Value.AddMinutes(TaskService.ActiveTask.DurationMinutes);
     var remaining = endTime - DateTime.UtcNow;
 
     <div class="mt-4 p-4 border bg-yellow-100 rounded">
 
-        <strong>Working on:</strong> @activeTask.Title<br />
-        ⏱ Time Remaining: @GetTimeRemaining(activeTask)
+        <strong>Working on:</strong> @TaskService.ActiveTask.Title<br />
+        ⏱ Time Remaining: @TaskService.GetTimeRemaining(TaskService.ActiveTask)
 
-        <button class="mt-2 px-4 py-1 bg-green-600 text-white rounded" @onclick="ForceCompleteActiveTask">
+        <button class="mt-2 px-4 py-1 bg-green-600 text-white rounded" @onclick="TaskService.ForceCompleteActiveTask">
             ✅ Finish Now
         </button>
-        <button class="mt-2 px-4 py-1 bg-red-500 text-white rounded" @onclick="CancelActiveTask">
+        <button class="mt-2 px-4 py-1 bg-red-500 text-white rounded" @onclick="TaskService.CancelActiveTask">
             ❌ Quit Task
         </button>
     </div>
 }
 
 @* Last result *@
-@if (lastResult != null)
+@if (TaskService.LastResult != null)
 {
     <div class="mt-4 p-4 border border-green-500 bg-green-100 rounded">
         <h3 class="text-lg font-semibold">✅ Quest Completed!</h3>
-        <p><strong>Unit:</strong> @lastResult.Unit?.Name</p>
-        <p><strong>XP Gained:</strong> @lastResult.ExperienceGained</p>
-        <p><strong>Loot:</strong> @lastResult.Loot</p>
-        <p><strong>Summary:</strong> @lastResult.OutcomeSummary</p>
-        <button class="mt-2 px-4 py-1 bg-green-500 text-white rounded" @onclick="() => lastResult = null">Close</button>
+        <p><strong>Unit:</strong> @TaskService.LastResult.Unit?.Name</p>
+        <p><strong>XP Gained:</strong> @TaskService.LastResult.ExperienceGained</p>
+        <p><strong>Loot:</strong> @TaskService.LastResult.Loot</p>
+        <p><strong>Summary:</strong> @TaskService.LastResult.OutcomeSummary</p>
+        <button class="mt-2 px-4 py-1 bg-green-500 text-white rounded" @onclick="() => TaskService.ClearResult()">Close</button>
     </div>
 }
 
@@ -137,72 +135,37 @@ else
     <button class="px-4 py-1 bg-blue-500 text-white rounded" @onclick="AddTask">Add Task</button>
 </div>
 
-@code {
-    private List<TaskModel>? tasks;
-    private TaskModel? activeTask;
-    private QuestResult? lastResult;
-    private int timeLeft;
+@* Code *@
 
-    private int? selectedUnitId = null;
-    private Unit? selectedUnit = null;
-    private List<Unit>? units;
-    private System.Timers.Timer? cooldownTimer;
-    private System.Timers.Timer? taskTimer;
+@code {
+    
+    private List<Unit>? units = new();
+    private int? selectedUnitId;
+    private Unit? selectedUnit;
+    private string statusMessage = "";
+
+    private string newTaskTitle = "";
+    private int newTaskDuration = 5;
+    private bool newTaskIsRepeatable = false;
 
     protected override void OnInitialized()
     {
-        tasks = Db.Tasks.ToList();
-        units = Db.Units.ToList();
+        units = TaskService.GetUnits();
+        TaskService.InvokeStateHasChangedAsync = async () => await InvokeAsync(StateHasChanged);
+        TaskService.OnChange += StateHasChanged;
 
-        if (selectedUnitId.HasValue)
-            selectedUnit = units.FirstOrDefault(u => u.Id == selectedUnitId.Value);
 
-        // Clean up stale running tasks
-        foreach (var task in tasks)
-        {
-            if (task.IsRunning && task.StartedAt != null)
-            {
-                var endTime = task.StartedAt.Value.AddMinutes(task.DurationMinutes);
-                if (DateTime.UtcNow >= endTime)
-                {
-                    task.IsRunning = false;
-                    task.StartedAt = null;
-                    Db.Update(task);
-                }
-            }
-        }
-        Db.SaveChanges();
-
-        activeTask = Db.Tasks.FirstOrDefault(t => t.IsRunning);
-        if (activeTask != null && activeTask.StartedAt != null)
-        {
-            var endTime = activeTask.StartedAt.Value.AddMinutes(activeTask.DurationMinutes);
-            var remaining = endTime - DateTime.UtcNow;
-
-            timeLeft = (int)Math.Ceiling(remaining.TotalMinutes);
-            if (timeLeft < 0)
-            {
-                // task already expired, auto-reset state
-                activeTask.IsRunning = false;
-                activeTask.StartedAt = null;
-                Db.Update(activeTask);
-                Db.SaveChanges();
-                activeTask = null;
-                timeLeft = 0;
-            }
-        }
-
-        // Timer ticks every second to update cooldowns
-        cooldownTimer = new System.Timers.Timer(1000);
-        cooldownTimer.Elapsed += (sender, args) =>
-        {
-            InvokeAsync(StateHasChanged); // This forces the page to refresh
-        };
-        cooldownTimer.Start();
     }
-    private Random rng = new Random();  // For picking random units
 
-    private string statusMessage = "";
+    private void CancelCooldown(TaskModel task)
+    {
+        TaskService.CancelCooldown(task);
+    }
+
+    public void Dispose()
+    {
+        TaskService.OnChange += StateHasChanged;
+    }
 
     private void HandleUnitSelection(ChangeEventArgs e)
     {
@@ -216,210 +179,31 @@ else
             selectedUnitId = null;
             selectedUnit = null;
         }
-
-        StateHasChanged(); // ensure UI refreshes
     }
 
-    public void Dispose()
+    private async Task StartTask(TaskModel task)
     {
-        cooldownTimer?.Stop();
-        cooldownTimer?.Dispose();
-    }
-
-    private string GetTimeRemaining(TaskModel task)
-    {
-        if (task.StartedAt == null) return "unknown";
-
-        var end = task.StartedAt.Value.AddMinutes(task.DurationMinutes);
-        var remaining = end - DateTime.UtcNow;
-        if (remaining <= TimeSpan.Zero) return "Done";
-
-        return $"{remaining.Minutes} min {remaining.Seconds} sec";
-    }
-
-    private async Task StartTaskAsync(TaskModel task)
-    {
-        if (task.IsCoolingDown)
+        if (selectedUnit == null)
         {
-            statusMessage = "Task is on cooldown";
-            return;
-        }
-        // for random selection of units var unit = availableUnits[rng.Next(availableUnits.Count)];
-        // selectedUnit = units?.FirstOrDefault(u => u.Id == selectedUnitId);
-        var unit = selectedUnit;
-
-        if (unit == null)
-        {
-            statusMessage = "⚠️ Select a unit before starting a task.";
-            return;
-        }   
-        
-        // Randomly select a unit
-        var availableUnits = Db.Units.ToList();
-        if (availableUnits.Count == 0)
-        {
-            Console.WriteLine("No units available!");
+            statusMessage = "Select a unit first.";
             return;
         }
 
-        if (activeTask != null)
-        {
-            statusMessage = "⚠️ Finish your current task before starting a new one.";
-            return;
-        }
-
-        activeTask = task;
-        timeLeft = task.DurationMinutes;
-
-        statusMessage = $"Starting task: {task.Title} with {unit.Name}";
-        StateHasChanged();
-
-        task.IsRunning = true;
-        task.StartedAt = DateTime.UtcNow;
-        Db.Update(task);
-        Db.SaveChanges();
-
-        // Create a quest
-        var quest = new Quest
-        {
-            Name = $"Quest for {task.Title}",
-            DurationMinutes = task.DurationMinutes,
-            StartedAt = DateTime.UtcNow
-        };
-        Db.Quests.Add(quest);
-        Db.SaveChanges();
-
-        // Simulate timer countdown (1 min per second)
-        while (timeLeft > 0)
-        {
-            await Task.Delay(1000); // Wait 1 second
-            timeLeft--;
-            StateHasChanged();
-
-            /*taskTimer = new System.Timers.Timer(1000);
-            taskTimer.Elapsed += (sender, args) =>
-            {
-                InvokeAsync(StateHasChanged); // This forces the page to refresh
-            };
-            taskTimer.Start();*/
-        }
-
-        // Mark task complete if not repeatable
-        if (!task.IsRepeatable)
-        {
-            task.IsCompleted = true;
-        }
-        task.LastCompletedAt = DateTime.UtcNow;
-        task.IsRunning = false;
-        task.StartedAt = null;
-        selectedUnit = null;
+        await TaskService.StartTaskAsync(task, selectedUnit.Id);
         selectedUnitId = null;
-        Db.Update(task);
-        Db.SaveChanges();
-        StateHasChanged();
-
-        // Create a quest result
-        var result = new QuestResult
-        {
-            QuestId = quest.Id,
-            UnitId = unit.Id,
-            WasSuccessful = true,
-            CompletedAt = DateTime.UtcNow,
-            OutcomeSummary = $"Task '{task.Title}' completed on time by {unit.Name}.",
-            ExperienceGained = 10 + rng.Next(10), // Random XP between 10–20
-            Loot = "Basic Loot Chest"
-        };
-        Db.QuestResults.Add(result);
-
-        // Give unit some XP
-        unit.Experience += result.ExperienceGained;
-        if (unit.Experience >= unit.ExperienceToNextLevel)
-        {
-            unit.Level += 1;
-            unit.Experience = 0;
-            unit.ExperienceToNextLevel += 50;
-        }
-        Db.Update(unit);
-        Db.SaveChanges();
-        lastResult = result;
-
-
-        // Reset state
-        activeTask = null;
-        statusMessage = "";
-        timeLeft = 0;
-
-        // Refresh task list
-        tasks = Db.Tasks.ToList();
+        selectedUnit = null;
     }
-    private string newTaskTitle = "";
-    private int newTaskDuration = 5;
-    private bool newTaskIsRepeatable = false;
 
     private void AddTask()
     {
         if (string.IsNullOrWhiteSpace(newTaskTitle) || newTaskDuration <= 0)
         {
-            statusMessage = "⚠️ Enter a valid task title and duration.";
+            statusMessage = "Enter valid title and duration.";
             return;
         }
 
-        var task = new TaskModel
-        {
-            Title = newTaskTitle,
-            DurationMinutes = newTaskDuration,
-            CreatedAt = DateTime.UtcNow,
-            IsCompleted = false,
-            IsRepeatable = newTaskIsRepeatable
-        };
-
-        Db.Tasks.Add(task);
-        Db.SaveChanges();
-
+        TaskService.AddTask(newTaskTitle, newTaskDuration, newTaskIsRepeatable);
         newTaskTitle = "";
         newTaskDuration = 5;
-
-        tasks = Db.Tasks.ToList();
-        statusMessage = $"✅ Task '{task.Title}' added.";
-    }
-
-    private void DeleteTask(TaskModel task)
-    {
-        if (activeTask != null && task.Id == activeTask.Id)
-        {
-            statusMessage = "⚠️ Cannot delete a task that's currently running.";
-            return;
-        }
-
-        Db.Tasks.Remove(task);
-        Db.SaveChanges();
-
-        tasks = Db.Tasks.ToList();
-        statusMessage = $"🗑 Task '{task.Title}' deleted.";
-    }
-
-    private async Task ForceCompleteActiveTask()
-    {
-        if (activeTask != null)
-        {
-            timeLeft = 0;
-            await StartTaskAsync(activeTask); // simulate finish
-        }
-    }
-
-    private void CancelActiveTask()
-    {
-        if (activeTask == null) return;
-
-        activeTask.IsRunning = false;
-        activeTask.StartedAt = null;
-        selectedUnit = null;
-        selectedUnitId = null;
-        Db.Update(activeTask);
-        Db.SaveChanges();
-
-        activeTask = null;
-        timeLeft = 0;
-        statusMessage = "❌ Task was cancelled.";
     }
 }

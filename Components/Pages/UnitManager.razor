@@ -1,0 +1,85 @@
+﻿@page "/units"
+@rendermode InteractiveServer
+@inject TaskManagerService TaskService
+@using ProductivityQuestManager.Data
+@implements IDisposable
+@inject IJSRuntime JS
+
+<h2 class="text-xl font-bold mb-4">Your Units</h2>
+
+@if (!units.Any())
+{
+    <p>No units yet.</p>
+}
+else
+{
+    <ul class="space-y-3">
+        @foreach (var unit in units)
+        {
+            <li class="border p-3 rounded bg-white shadow">
+                <strong>@unit.Name</strong><br />
+                Level: @unit.Level<br />
+                XP: @unit.Experience / @unit.ExperienceToNextLevel
+                <br />
+                <button class="btn btn-danger mt-2" @onclick="() => ConfirmDelete(unit.Id, unit.Name)">🗑 Delete</button>
+            </li>
+        }
+    </ul>
+}
+
+<h3 class="mt-6 font-semibold text-lg">➕ Add New Unit</h3>
+<div class="mt-2 space-y-2">
+    <input type="text" placeholder="Unit name" class="border p-2 rounded w-64" @bind="newUnitName" />
+    <input type="text" placeholder="Unit class" class="border p-2 rounded w-64" @bind="newUnitClass" />
+    <button class="px-4 py-1 bg-blue-500 text-white rounded" @onclick="AddUnit">Add Unit</button>
+</div>
+
+@code {
+    private List<Unit> units = new();
+    private string newUnitName = "";
+    private string newUnitClass = "";
+
+    protected override void OnInitialized()
+    {
+        units = TaskService.GetUnits();
+        TaskService.OnChange += StateHasChanged;
+        {
+            units = TaskService.GetUnits();
+            StateHasChanged();
+        }
+    }
+
+    private void AddUnit()
+    {      
+        //Console.WriteLine("AddUnit called");
+        if (!string.IsNullOrWhiteSpace(newUnitName))
+        {
+            TaskService.AddUnit(newUnitName, newUnitClass);
+            newUnitName = "";
+            newUnitClass = "";
+            units = TaskService.GetUnits();           
+        }       
+    }
+
+    private async Task ConfirmDelete(int unitId, string unitName)
+    {
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", $"Are you sure you want to delete {unitName}?");
+        if (confirmed)
+        {
+            TaskService.DeleteUnit(unitId);
+            units = TaskService.GetUnits(); // Reload list after deletion
+        }
+    }
+
+    private void DeleteUnit(int id)
+    {
+        //Console.WriteLine("Trying to delete from buttonm");
+        TaskService.DeleteUnit(id);
+        units = TaskService.GetUnits();
+    }
+
+    public void Dispose()
+    {
+        TaskService.OnChange -= StateHasChanged;
+    }
+}

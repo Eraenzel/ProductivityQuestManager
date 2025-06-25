@@ -12,6 +12,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite("Data Source=app.db"));
 
+builder.Services.AddScoped<TaskManagerService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.

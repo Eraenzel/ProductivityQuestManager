@@ -1,0 +1,225 @@
+﻿using System.Timers;
+using ProductivityQuestManager.Data;
+
+public class TaskManagerService : IDisposable
+{
+    private readonly AppDbContext _db;
+    private readonly System.Timers.Timer _timer;
+    private readonly Random _rng = new();
+
+    public event Action? OnChange;
+
+    public List<TaskModel> Tasks { get; private set; } = new();
+    public TaskModel? ActiveTask { get; private set; }
+    public QuestResult? LastResult { get; private set; }
+    public Func<Task>? InvokeStateHasChangedAsync { get; set; }
+
+
+    public TaskManagerService(AppDbContext db)
+    {
+        _db = db;
+        LoadState();
+
+        _timer = new System.Timers.Timer(1000);
+        _timer.Elapsed += (s, e) => NotifyStateChanged();
+        _timer.Start();
+    }
+
+    public void LoadState()
+    {
+        Tasks = _db.Tasks.ToList();
+        ActiveTask = Tasks.FirstOrDefault(t => t.IsRunning);
+        CleanupExpiredTask();
+    }
+
+    public List<Unit> GetUnits() => _db.Units.ToList();
+
+    public bool IsCoolingDown(TaskModel task)
+    {
+        if (!task.IsRepeatable || task.LastCompletedAt == null) return false;
+        return DateTime.UtcNow < task.LastCompletedAt.Value.AddMinutes(task.CooldownMinutes);
+    }
+
+    public string GetTimeRemaining(TaskModel task)
+    {
+        if (task.StartedAt == null) return "unknown";
+        var end = task.StartedAt.Value.AddMinutes(task.DurationMinutes);
+        var remaining = end - DateTime.UtcNow;
+        return remaining <= TimeSpan.Zero ? "Done" : $"{remaining.Minutes} min {remaining.Seconds} sec";
+    }
+
+    public async Task StartTaskAsync(TaskModel task, int unitId)
+    {
+        if (IsCoolingDown(task) || ActiveTask != null) return;
+
+        var unit = _db.Units.FirstOrDefault(u => u.Id == unitId);
+        if (unit == null) return;
+
+        task.IsRunning = true;
+        task.StartedAt = DateTime.UtcNow;
+        ActiveTask = task;
+        _db.Update(task);
+
+        var quest = new Quest
+        {
+            Name = $"Quest for {task.Title}",
+            DurationMinutes = task.DurationMinutes,
+            StartedAt = DateTime.UtcNow
+        };
+        _db.Quests.Add(quest);
+        await _db.SaveChangesAsync();
+
+        await Task.Delay(task.DurationMinutes * 1000); // Simulate duration (1 sec = 1 min for test)
+
+        task.IsRunning = false;
+        task.StartedAt = null;
+        task.LastCompletedAt = DateTime.UtcNow;
+        if (!task.IsRepeatable) task.IsCompleted = true;
+        _db.Update(task);
+
+        var result = new QuestResult
+        {
+            QuestId = quest.Id,
+            UnitId = unit.Id,
+            WasSuccessful = true,
+            CompletedAt = DateTime.UtcNow,
+            OutcomeSummary = $"Task '{task.Title}' completed on time by {unit.Name}.",
+            ExperienceGained = 10 + _rng.Next(10),
+            Loot = "Basic Loot Chest"
+        };
+
+        _db.QuestResults.Add(result);
+        LastResult = result;
+
+        unit.Experience += result.ExperienceGained;
+        if (unit.Experience >= unit.ExperienceToNextLevel)
+        {
+            unit.Level++;
+            unit.Experience = 0;
+            unit.ExperienceToNextLevel += 50;
+        }
+        _db.Update(unit);
+
+        ActiveTask = null;
+        await _db.SaveChangesAsync();
+        LoadState();
+        NotifyStateChanged();
+    }
+
+    public void AddTask(string title, int duration, bool isRepeatable)
+    {
+        var task = new TaskModel
+        {
+            Title = title,
+            DurationMinutes = duration,
+            IsRepeatable = isRepeatable,
+            IsCompleted = false,
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Tasks.Add(task);
+        _db.SaveChanges();
+        LoadState();
+        NotifyStateChanged();
+    }
+
+    public void DeleteTask(TaskModel task)
+    {
+        if (ActiveTask != null && task.Id == ActiveTask.Id) return;
+        _db.Tasks.Remove(task);
+        _db.SaveChanges();
+        LoadState();
+        NotifyStateChanged();
+    }
+
+    public void CancelCooldown(TaskModel task)
+    {
+        task.LastCompletedAt = null;
+        _db.Update(task);
+        _db.SaveChanges();
+        LoadState();
+        NotifyStateChanged();
+    }
+
+    public void ForceCompleteActiveTask()
+    {
+        if (ActiveTask == null) return;
+        StartTaskAsync(ActiveTask, _db.Units.First().Id); // Fake complete with a unit
+    }
+
+    public void CancelActiveTask()
+    {
+        if (ActiveTask == null) return;
+        ActiveTask.IsRunning = false;
+        ActiveTask.StartedAt = null;
+        _db.Update(ActiveTask);
+        _db.SaveChanges();
+        ActiveTask = null;
+        NotifyStateChanged();
+    }
+
+    public void ClearResult()
+    {
+        LastResult = null;
+        NotifyStateChanged();
+    }
+
+    private void CleanupExpiredTask()
+    {
+        if (ActiveTask != null && ActiveTask.StartedAt != null)
+        {
+            var endTime = ActiveTask.StartedAt.Value.AddMinutes(ActiveTask.DurationMinutes);
+            if (DateTime.UtcNow >= endTime)
+            {
+                ActiveTask.IsRunning = false;
+                ActiveTask.StartedAt = null;
+                _db.Update(ActiveTask);
+                _db.SaveChanges();
+                ActiveTask = null;
+            }
+        }
+    }
+
+    private void NotifyStateChanged() => _ = InvokeStateHasChangedAsync?.Invoke();
+
+    public void Dispose()
+    {
+        _timer?.Stop();
+        _timer?.Dispose();
+    }
+
+    public void AddUnit(string name, string unitClass)
+    {
+        Console.WriteLine($"[AddUnit] Adding unit: {name}");
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        var unit = new Unit
+        {
+            Name = name,
+            //Id = 5,
+            Class = unitClass,
+            Level = 1,
+            Experience = 0,
+            ExperienceToNextLevel = 100
+        };
+        _db.Units.Add(unit);
+        _db.SaveChanges();
+        NotifyStateChanged();
+    }
+
+    public void DeleteUnit(int id)
+    {
+        //Console.WriteLine($"[Service] Deleting unit {id}");
+        var unit = _db.Units.FirstOrDefault(u => u.Id == id);
+        
+        if (unit != null)
+        {
+            _db.Units.Remove(unit);
+            _db.SaveChanges();
+            NotifyStateChanged();
+        }
+        else
+        {
+            Console.WriteLine("[Service] Unit not found!");
+        }
+    }
+}
