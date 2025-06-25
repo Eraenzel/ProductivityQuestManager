@@ -11,6 +11,7 @@
         public DateTime? LastCompletedAt { get; set; }
         public int CooldownMinutes { get; set; } = 5; // default cooldown
         public bool IsRunning { get; set; } = false;
+        public bool IsCoolingDown { get; set; } = false;
         public DateTime? StartedAt { get; set; }
     }
 }

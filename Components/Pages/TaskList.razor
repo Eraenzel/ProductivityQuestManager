@@ -1,5 +1,6 @@
 ﻿@page "/"
 @rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Forms
 @using ProductivityQuestManager.Data
 @inject AppDbContext Db
 @implements IDisposable
@@ -7,14 +8,19 @@
 @* Active unit *@
 <h3 class="font-semibold">🎯 Active Unit</h3>
 
-<select class="border p-2 rounded mb-4" @bind="selectedUnitId" @bind:event="onchange">
+<select class="border p-2 rounded mb-4" @onchange="HandleUnitSelection">
     <option value="">-- Choose Unit --</option>
-    @foreach (var unit in units)
+    @foreach (var unit in units ?? Enumerable.Empty<Unit>())
     {
-        <option value="@unit.Id">@unit.Name (Lv @unit.Level)</option>
-        
+        <option value="@unit.Id" selected="@(selectedUnit?.Id == unit.Id)">
+            @unit.Name (Lv @unit.Level)
+        </option>
     }
 </select>
+
+<p class="text-sm text-gray-600">
+    DEBUG: selectedUnitId = @selectedUnitId, selectedUnit = @(selectedUnit?.Name ?? "null")
+</p>
 
 @* Tasks *@
 <h2 class="text-xl font-bold mb-4">Your Tasks</h2>
@@ -35,7 +41,7 @@ else
         {
             var isCoolingDown = task.IsRepeatable &&
             task.LastCompletedAt != null &&
-            DateTime.UtcNow < task.LastCompletedAt.Value.AddMinutes(task.CooldownMinutes);
+            DateTime.UtcNow < task.LastCompletedAt.Value.AddMinutes(task.CooldownMinutes); 
 
             <li class="border p-3 rounded bg-white shadow">
                 <strong>@task.Title</strong><br />
@@ -53,14 +59,15 @@ else
 
                 @if (!task.IsCompleted || task.IsRepeatable)
                 {
-                <button class="btn btn-primary" @onclick="@(() => StartTaskAsync(task))" 
-                    disabled="@isCoolingDown || activeTask != null || selectedUnit == null">
-                    ▶ Start
-                </button>
-                <button class="btn btn-danger" @onclick="@(() => DeleteTask(task))"
-                        disabled="@(activeTask != null && activeTask.Id == task.Id)">
-                    🗑 Delete
-                </button>
+                    task.IsCoolingDown = isCoolingDown;
+                    <button class="btn btn-primary" @onclick="@(() => StartTaskAsync(task))"
+                                >
+                        ▶ Start
+                    </button>
+                    <button class="btn btn-danger" @onclick="@(() => DeleteTask(task))"
+                            disabled="@(activeTask != null && activeTask.Id == task.Id)">
+                        🗑 Delete
+                    </button>
                 
                     @if (isCoolingDown)
                     {
@@ -86,10 +93,10 @@ else
 @* Active task *@
 @if (activeTask != null)
 {
-    <div class="mt-4 p-4 border bg-yellow-100 rounded">
+    var endTime = activeTask.StartedAt.Value.AddMinutes(activeTask.DurationMinutes);
+    var remaining = endTime - DateTime.UtcNow;
 
-        var endTime = activeTask.StartedAt.Value.AddMinutes(activeTask.DurationMinutes);
-        var remaining = endTime - DateTime.UtcNow;
+    <div class="mt-4 p-4 border bg-yellow-100 rounded">
 
         <strong>Working on:</strong> @activeTask.Title<br />
         ⏱ Time Remaining: @GetTimeRemaining(activeTask)
@@ -135,10 +142,12 @@ else
     private TaskModel? activeTask;
     private QuestResult? lastResult;
     private int timeLeft;
-    private int? selectedUnitId;
-    private Unit? selectedUnit;
+
+    private int? selectedUnitId = null;
+    private Unit? selectedUnit = null;
     private List<Unit>? units;
     private System.Timers.Timer? cooldownTimer;
+    private System.Timers.Timer? taskTimer;
 
     protected override void OnInitialized()
     {
@@ -195,6 +204,22 @@ else
 
     private string statusMessage = "";
 
+    private void HandleUnitSelection(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id))
+        {
+            selectedUnitId = id;
+            selectedUnit = units?.FirstOrDefault(u => u.Id == id);
+        }
+        else
+        {
+            selectedUnitId = null;
+            selectedUnit = null;
+        }
+
+        StateHasChanged(); // ensure UI refreshes
+    }
+
     public void Dispose()
     {
         cooldownTimer?.Stop();
@@ -214,8 +239,13 @@ else
 
     private async Task StartTaskAsync(TaskModel task)
     {
+        if (task.IsCoolingDown)
+        {
+            statusMessage = "Task is on cooldown";
+            return;
+        }
         // for random selection of units var unit = availableUnits[rng.Next(availableUnits.Count)];
-        selectedUnit = units?.FirstOrDefault(u => u.Id == selectedUnitId);
+        // selectedUnit = units?.FirstOrDefault(u => u.Id == selectedUnitId);
         var unit = selectedUnit;
 
         if (unit == null)
@@ -265,6 +295,13 @@ else
             await Task.Delay(1000); // Wait 1 second
             timeLeft--;
             StateHasChanged();
+
+            /*taskTimer = new System.Timers.Timer(1000);
+            taskTimer.Elapsed += (sender, args) =>
+            {
+                InvokeAsync(StateHasChanged); // This forces the page to refresh
+            };
+            taskTimer.Start();*/
         }
 
         // Mark task complete if not repeatable
