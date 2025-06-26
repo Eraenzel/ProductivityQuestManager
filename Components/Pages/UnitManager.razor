@@ -6,6 +6,19 @@
 @inject IJSRuntime JS
 
 <h2 class="text-xl font-bold mb-4">Your Units</h2>
+<h3 class="font-semibold">🎯 Active Unit</h3>
+@if (TaskService.ActiveUnit != null)
+{
+    <div class="mb-4 p-2 border rounded bg-gray-100">
+        <strong>@TaskService.ActiveUnit.Name</strong> (Lv @TaskService.ActiveUnit.Level)
+    </div>
+}
+else
+{
+    <p class="text-sm text-red-500 mb-4">No active unit selected. Please go to the Units page to set one.</p>
+}
+
+<h2 class="text-xl font-bold mb-4">Your Tasks</h2>
 
 @if (!units.Any())
 {
@@ -21,7 +34,8 @@ else
                 Level: @unit.Level<br />
                 XP: @unit.Experience / @unit.ExperienceToNextLevel
                 <br />
-                <button class="btn btn-danger mt-2" @onclick="() => ConfirmDelete(unit.Id, unit.Name)">🗑 Delete</button>
+                <button class="btn btn-secondary mt-2" @onclick="() => SetActive(unit.Id)">🎯 Set Active</button>
+                <button class="btn btn-danger mt-2" @onclick="() => ConfirmDelete(unit.Id, unit.Name)">🗑 Release</button>
             </li>
         }
     </ul>
@@ -63,7 +77,7 @@ else
 
     private async Task ConfirmDelete(int unitId, string unitName)
     {
-        bool confirmed = await JS.InvokeAsync<bool>("confirm", $"Are you sure you want to delete {unitName}?");
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", $"Are you sure you want to release {unitName}?");
         if (confirmed)
         {
             TaskService.DeleteUnit(unitId);
@@ -81,5 +95,10 @@ else
     public void Dispose()
     {
         TaskService.OnChange -= StateHasChanged;
+    }
+
+    private void SetActive(int unitId)
+    {
+        TaskService.SetActiveUnit(unitId);
     }
 }

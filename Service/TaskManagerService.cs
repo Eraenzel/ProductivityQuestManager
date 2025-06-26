@@ -13,7 +13,7 @@ public class TaskManagerService : IDisposable
     public TaskModel? ActiveTask { get; private set; }
     public QuestResult? LastResult { get; private set; }
     public Func<Task>? InvokeStateHasChangedAsync { get; set; }
-
+    public Unit? ActiveUnit { get; private set; }
 
     public TaskManagerService(AppDbContext db)
     {
@@ -69,7 +69,7 @@ public class TaskManagerService : IDisposable
         _db.Quests.Add(quest);
         await _db.SaveChangesAsync();
 
-        await Task.Delay(task.DurationMinutes * 1000); // Simulate duration (1 sec = 1 min for test)
+        await Task.Delay(task.DurationMinutes * 60 * 1000); // Simulate duration (1 sec = 1 min for test) 
 
         task.IsRunning = false;
         task.StartedAt = null;
@@ -140,20 +140,89 @@ public class TaskManagerService : IDisposable
         NotifyStateChanged();
     }
 
-    public void ForceCompleteActiveTask()
+    public async Task ForceCompleteActiveTask()
     {
-        if (ActiveTask == null) return;
-        StartTaskAsync(ActiveTask, _db.Units.First().Id); // Fake complete with a unit
+        if (ActiveTask == null || ActiveUnit == null) return;
+
+        var unit = ActiveUnit;
+        var task = ActiveTask;
+        var quest = new Quest
+        {
+            Name = $"Quest for {task.Title}",
+            DurationMinutes = task.DurationMinutes,
+            StartedAt = DateTime.UtcNow
+        };
+        _db.Quests.Add(quest);
+        await _db.SaveChangesAsync();
+
+        task.IsRunning = false;
+        task.StartedAt = null;
+        task.LastCompletedAt = DateTime.UtcNow;
+        if (!task.IsRepeatable) task.IsCompleted = true;
+        _db.Update(task);
+
+        var result = new QuestResult
+        {
+            QuestId = quest.Id,
+            UnitId = unit.Id,
+            WasSuccessful = true,
+            CompletedAt = DateTime.UtcNow,
+            OutcomeSummary = $"Task '{task.Title}' was force completed by {unit.Name}.",
+            ExperienceGained = 10 + _rng.Next(10),
+            Loot = "Manual Completion Reward"
+        };
+        _db.QuestResults.Add(result);
+        LastResult = result;
+
+        unit.Experience += result.ExperienceGained;
+        if (unit.Experience >= unit.ExperienceToNextLevel)
+        {
+            unit.Level++;
+            unit.Experience = 0;
+            unit.ExperienceToNextLevel += 50;
+        }
+        _db.Update(unit);
+
+        ActiveTask = null;
+        await _db.SaveChangesAsync();
+        LoadState();
+        NotifyStateChanged();
     }
 
-    public void CancelActiveTask()
+    public async Task CancelActiveTask()
     {
-        if (ActiveTask == null) return;
-        ActiveTask.IsRunning = false;
-        ActiveTask.StartedAt = null;
-        _db.Update(ActiveTask);
-        _db.SaveChanges();
+        if (ActiveTask == null || ActiveUnit == null) return;
+
+        var task = ActiveTask;
+        task.IsRunning = false;
+        task.StartedAt = null;
+        _db.Update(task);
+
+        var quest = new Quest
+        {
+            Name = $"Quest {task.Title} cancelled.",
+            DurationMinutes = task.DurationMinutes,
+            StartedAt = DateTime.UtcNow
+        };
+        _db.Quests.Add(quest);
+        await _db.SaveChangesAsync();
+
+        var result = new QuestResult
+        {
+            QuestId = quest.Id,
+            UnitId = ActiveUnit.Id,
+            WasSuccessful = false,
+            CompletedAt = DateTime.UtcNow,
+            OutcomeSummary = $"Task '{task.Title}' was cancelled.",
+            ExperienceGained = 0,
+            Loot = "None"
+        };
+        _db.QuestResults.Add(result);
+        LastResult = result;
+
         ActiveTask = null;
+        _db.SaveChanges();
+        LoadState();
         NotifyStateChanged();
     }
 
@@ -185,6 +254,12 @@ public class TaskManagerService : IDisposable
     {
         _timer?.Stop();
         _timer?.Dispose();
+    }
+
+    public void SetActiveUnit(int unitId)
+    {
+        ActiveUnit = _db.Units.FirstOrDefault(u => u.Id == unitId);
+        NotifyStateChanged();
     }
 
     public void AddUnit(string name, string unitClass)

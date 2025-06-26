@@ -2,30 +2,22 @@
 @rendermode InteractiveServer
 @using Microsoft.AspNetCore.Components.Forms
 @using ProductivityQuestManager.Data
-@inject AppDbContext Db
 @inject TaskManagerService TaskService
 @implements IDisposable
 
-@* Active unit *@
-<h3 class="font-semibold">Active Unit</h3>
+<h3 class="font-semibold">🎯 Active Unit</h3>
+@if (TaskService.ActiveUnit != null)
+{
+    <div class="mb-4 p-2 border rounded bg-gray-100">
+        <strong>@TaskService.ActiveUnit.Name</strong> (Lv @TaskService.ActiveUnit.Level)
+    </div>
+}
+else
+{
+    <p class="text-sm text-red-500 mb-4">No active unit selected. Please go to the Units page to set one.</p>
+}
 
-<select class="border p-2 rounded mb-4" @onchange="HandleUnitSelection">
-    <option value="">-- Choose Unit --</option>
-    @foreach (var unit in units ?? Enumerable.Empty<Unit>())
-    {
-        <option value="@unit.Id" selected="@(selectedUnit?.Id == unit.Id)">
-            @unit.Name (Lv @unit.Level)
-        </option>
-    }
-</select>
-
-<p class="text-sm text-gray-600">
-    DEBUG: selectedUnitId = @selectedUnitId, selectedUnit = @(selectedUnit?.Name ?? "null")
-</p>
-
-@* Tasks *@
 <h2 class="text-xl font-bold mb-4">Your Tasks</h2>
-
 @if (TaskService.Tasks == null)
 {
     <p>Loading tasks...</p>
@@ -36,11 +28,11 @@ else if (!TaskService.Tasks.Any())
 }
 else
 {
-    
     <ul class="space-y-3">
         @foreach (var task in TaskService.Tasks.Where(t => !t.IsCompleted || t.IsRepeatable))
         {
             var isCoolingDown = TaskService.IsCoolingDown(task);
+            var isDisabled = isCoolingDown || TaskService.ActiveUnit == null || TaskService.ActiveTask != null;
 
             <li class="border p-3 rounded bg-white shadow">
                 <strong>@task.Title</strong><br />
@@ -51,34 +43,34 @@ else
         
                     <br />
                 }
-                @if (selectedUnit == null)
+                @if (TaskService.ActiveUnit == null)
                 {
-                    <p class="text-sm text-red-500">Select a unit to start a task.</p>
+                    <p class="text-sm text-red-500">No unit selected.</p>
                 }
 
                 <button class="btn btn-primary" @onclick="() => StartTask(task)"
-                        >                   
-					▶ Start
-				</button>
+                        disabled="@(TaskService.IsCoolingDown(task) || TaskService.ActiveUnit == null || TaskService.ActiveTask != null)">
+                    ▶ Start
+                </button>
                 <button class="btn btn-danger" @onclick="() => TaskService.DeleteTask(task)"
                         disabled="@((TaskService.ActiveTask != null && TaskService.ActiveTask.Id == task.Id))">
                     🗑 Delete
                 </button>
-
-                @if (isCoolingDown && task.LastCompletedAt != null)
-				{
-					var cooldownEnd = task.LastCompletedAt.Value.AddMinutes(task.CooldownMinutes);
-					var remaining = cooldownEnd - DateTime.UtcNow;
-
-					<div class="text-yellow-600">
-						⏳ On cooldown for: @((int)remaining.TotalMinutes) min
-						@remaining.Seconds sec remaining   
-					</div>
-                    <button class="mt-2 px-2 py-1 bg-red-300 text-black rounded" @onclick="() => CancelCooldown(task)">
-                        Cancel Cooldown (Debug)
+                <div class="transition-opacity duration-500 ease-in-out"
+                     style="@(TaskService.IsCoolingDown(task) ? "opacity: 1;" : "opacity: 0; height: 0; overflow: hidden;")">
+                    <button class="btn btn-warning" @onclick="() => CancelCooldown(task)">
+                        Cancel Cooldown
                     </button>
-				}				
-                else if (isCoolingDown)
+                </div>
+                @if (isCoolingDown)
+                {
+                    var cooldownEnd = task.LastCompletedAt.Value.AddMinutes(task.CooldownMinutes);
+                    var remaining = cooldownEnd - DateTime.UtcNow;
+                    <div class="text-yellow-600">
+                        ⏳ On cooldown for: @((int)remaining.TotalMinutes) min @remaining.Seconds sec remaining
+                    </div>
+                }
+                else if (task.IsCompleted)
                 {
                     <span class="text-green-700">✅ Completed</span>
                 }
@@ -88,110 +80,86 @@ else
     <p class="mt-4 text-blue-600 font-semibold">@statusMessage</p>
 }
 
-@* Active task *@
-@if (TaskService.ActiveTask != null && TaskService.ActiveTask.StartedAt != null)
+@if (TaskService.ActiveTask != null)
 {
     var endTime = TaskService.ActiveTask.StartedAt.Value.AddMinutes(TaskService.ActiveTask.DurationMinutes);
     var remaining = endTime - DateTime.UtcNow;
 
     <div class="mt-4 p-4 border bg-yellow-100 rounded">
-
         <strong>Working on:</strong> @TaskService.ActiveTask.Title<br />
         ⏱ Time Remaining: @TaskService.GetTimeRemaining(TaskService.ActiveTask)
 
-        <button class="mt-2 px-4 py-1 bg-green-600 text-white rounded" @onclick="TaskService.ForceCompleteActiveTask">
-            ✅ Finish Now
-        </button>
-        <button class="mt-2 px-4 py-1 bg-red-500 text-white rounded" @onclick="TaskService.CancelActiveTask">
-            ❌ Quit Task
-        </button>
+        <button class="mt-2 px-4 py-1 bg-green-600 text-white rounded" @onclick="async () => await TaskService.ForceCompleteActiveTask()">✅ Finish Now</button>
+        <button class="mt-2 px-4 py-1 bg-red-500 text-white rounded" @onclick="TaskService.CancelActiveTask">❌ Quit Task</button>
     </div>
 }
 
-@* Last result *@
-@if (TaskService.LastResult != null)
-{
-    <div class="mt-4 p-4 border border-green-500 bg-green-100 rounded">
-        <h3 class="text-lg font-semibold">✅ Quest Completed!</h3>
-        <p><strong>Unit:</strong> @TaskService.LastResult.Unit?.Name</p>
-        <p><strong>XP Gained:</strong> @TaskService.LastResult.ExperienceGained</p>
-        <p><strong>Loot:</strong> @TaskService.LastResult.Loot</p>
-        <p><strong>Summary:</strong> @TaskService.LastResult.OutcomeSummary</p>
-        <button class="mt-2 px-4 py-1 bg-green-500 text-white rounded" @onclick="() => TaskService.ClearResult()">Close</button>
-    </div>
-}
+<div class="transition-opacity quest-result"
+     style="@(TaskService.LastResult != null
+                                   ? "opacity: 1; max-height: 1000px; margin-top: 1rem;"
+                                   : "opacity: 0; max-height: 0; overflow: hidden; margin-top: 0;")">
+    @if (TaskService.LastResult != null)
+    {
+        <div class="p-4 border border-green-500 bg-green-100 rounded">
+            <h3 class="text-lg font-semibold">✅ Quest Completed!</h3>
+            <p><strong>Unit:</strong> @TaskService.LastResult.Unit?.Name</p>
+            <p><strong>XP Gained:</strong> @TaskService.LastResult.ExperienceGained</p>
+            <p><strong>Loot:</strong> @TaskService.LastResult.Loot</p>
+            <p><strong>Summary:</strong> @TaskService.LastResult.OutcomeSummary</p>
+            <button class="mt-2 px-4 py-1 bg-green-500 text-white rounded"
+                    @onclick="() => TaskService.ClearResult()">
+                Close
+            </button>
+        </div>
+    }
+</div>
 
-@* Add new task *@
 <h3 class="mt-6 font-semibold text-lg">➕ Add New Task</h3>
 <div class="mt-2 space-y-2">
     <input type="text" placeholder="Task title" class="border p-2 rounded w-64" @bind="newTaskTitle" />
     <input type="number" placeholder="Duration (min)" class="border p-2 rounded w-32" @bind="newTaskDuration" />
-
     <label class="flex items-center space-x-2">
         <input type="checkbox" @bind="newTaskIsRepeatable" />
         <span>Repeatable?</span>
     </label>
-
     <button class="px-4 py-1 bg-blue-500 text-white rounded" @onclick="AddTask">Add Task</button>
 </div>
 
-@* Code *@
-
 @code {
-    
-    private List<Unit>? units = new();
-    private int? selectedUnitId;
-    private Unit? selectedUnit;
     private string statusMessage = "";
 
     private string newTaskTitle = "";
     private int newTaskDuration = 5;
     private bool newTaskIsRepeatable = false;
+    private System.Timers.Timer? refreshTimer;
 
     protected override void OnInitialized()
     {
-        units = TaskService.GetUnits();
-        TaskService.InvokeStateHasChangedAsync = async () => await InvokeAsync(StateHasChanged);
         TaskService.OnChange += StateHasChanged;
 
+        // Trigger full UI update just in case
+        InvokeAsync(StateHasChanged);
 
+        // Start local timer to force refresh every second
+        refreshTimer = new System.Timers.Timer(1000); // 1 second
+        refreshTimer.Elapsed += (sender, e) => InvokeAsync(StateHasChanged);
+        refreshTimer.Start();
+    }
+
+    private async Task StartTask(TaskModel task)
+    {
+        if (TaskService.ActiveUnit == null)
+        {
+            statusMessage = "No unit selected.";
+            return;
+        }
+
+        await TaskService.StartTaskAsync(task, TaskService.ActiveUnit.Id);
     }
 
     private void CancelCooldown(TaskModel task)
     {
         TaskService.CancelCooldown(task);
-    }
-
-    public void Dispose()
-    {
-        TaskService.OnChange += StateHasChanged;
-    }
-
-    private void HandleUnitSelection(ChangeEventArgs e)
-    {
-        if (int.TryParse(e.Value?.ToString(), out var id))
-        {
-            selectedUnitId = id;
-            selectedUnit = units?.FirstOrDefault(u => u.Id == id);
-        }
-        else
-        {
-            selectedUnitId = null;
-            selectedUnit = null;
-        }
-    }
-
-    private async Task StartTask(TaskModel task)
-    {
-        if (selectedUnit == null)
-        {
-            statusMessage = "Select a unit first.";
-            return;
-        }
-
-        await TaskService.StartTaskAsync(task, selectedUnit.Id);
-        selectedUnitId = null;
-        selectedUnit = null;
     }
 
     private void AddTask()
@@ -206,4 +174,27 @@ else
         newTaskTitle = "";
         newTaskDuration = 5;
     }
+
+    public void Dispose()
+    {
+        TaskService.OnChange -= StateHasChanged;
+
+        // Clean up
+        refreshTimer?.Stop();
+        refreshTimer?.Dispose();
+    }
+
+    private bool CanStart(TaskModel task)
+    {
+        var canStart = !TaskService.IsCoolingDown(task)
+                  && TaskService.ActiveUnit != null
+                  && TaskService.ActiveTask == null;
+
+        Console.WriteLine($"CanStart: task={task.Title}, IsCoolingDown={TaskService.IsCoolingDown(task)}, " +
+                      $"HasUnit={TaskService.ActiveUnit != null}, HasActiveTask={TaskService.ActiveTask != null}, " +
+                      $"=> CanStart={canStart}");
+        
+        return canStart;
+    }
+    
 }
