@@ -21,9 +21,9 @@ namespace ProductivityQuestManager.Data
             // Add Units
             var units = new List<Unit>
             {
-                new Unit { Name = "Aria", Class = "Warrior", Attack = 12, Defense = 8 },
-                new Unit { Name = "Lyn", Class = "Mage", Attack = 15, Defense = 3 },
-                new Unit { Name = "Tor", Class = "Rogue", Attack = 10, Defense = 5, Speed = 8 }
+                new Unit { Name = "Aria", Class = UnitClass.Warrior, Attack = 12, Defense = 8 },
+                new Unit { Name = "Lyn", Class = UnitClass.Mage, Attack = 15, Defense = 3 },
+                new Unit { Name = "Tor", Class = UnitClass.Rogue, Attack = 10, Defense = 5, Speed = 8 }
             };
             db.Units.AddRange(units);
 

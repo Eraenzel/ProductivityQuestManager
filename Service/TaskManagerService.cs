@@ -1,11 +1,17 @@
-﻿using System.Timers;
-using ProductivityQuestManager.Data;
+﻿using ProductivityQuestManager.Data;
+using System.Text.Json;
+using System.Timers;
+
 
 public class TaskManagerService : IDisposable
 {
     private readonly AppDbContext _db;
+    private readonly IWebHostEnvironment _env;
     private readonly System.Timers.Timer _timer;
     private readonly Random _rng = new();
+
+    private List<string> _firstNames = new();
+    private List<string> _surnames = new();
 
     public event Action? OnChange;
 
@@ -15,22 +21,77 @@ public class TaskManagerService : IDisposable
     public Func<Task>? InvokeStateHasChangedAsync { get; set; }
     public Unit? ActiveUnit { get; private set; }
 
-    public TaskManagerService(AppDbContext db)
+    public class NamePool
+    {
+        public List<string> FirstNames { get; set; } = new();
+        public List<string> Surnames { get; set; } = new();
+    }
+
+    public TaskManagerService(AppDbContext db,
+            IWebHostEnvironment env)
     {
         _db = db;
-        LoadState();
+        _env = env;
+        LoadNamePool();
+        LoadState();        
 
         _timer = new System.Timers.Timer(1000);
         _timer.Elapsed += (s, e) => NotifyStateChanged();
         _timer.Start();
     }
 
+    #region Initialization
+
+    private void LoadNamePool()
+    {
+        var webRoot = _env.WebRootPath;
+        var path = Path.Combine(
+            webRoot,
+            "data",
+            "names.json");
+
+        Console.WriteLine($"[LoadNamePool] Looking for names.json at: {path}");
+        Console.WriteLine($"[LoadNamePool] File exists: {File.Exists(path)}");
+
+        if (File.Exists(path))
+        {
+            try
+            {
+                var json = File.ReadAllText(path);
+                var pool = JsonSerializer.Deserialize<NamePool>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); 
+                if (pool is not null)
+                {
+                    _firstNames = pool.FirstNames;
+                    _surnames = pool.Surnames;
+                    Console.WriteLine($"[LoadNamePool] Loaded {pool.FirstNames.Count} first names and {pool.Surnames.Count} surnames.");
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[LoadNamePool] Error deserializing names.json: {ex.Message}");
+                // Ignore malformed JSON, fallback below
+            }
+        }
+
+        // Fallback default names
+        if (_firstNames.Count == 0)
+            _firstNames = new List<string> { "Aldric", "Branwen", "Cedric" };
+
+        if (_surnames.Count == 0)
+            _surnames = new List<string> { "Brightwood", "Crowhaven", "Duskblade" };
+    }
+
+
     public void LoadState()
     {
         Tasks = _db.Tasks.ToList();
         ActiveTask = Tasks.FirstOrDefault(t => t.IsRunning);
+        ActiveUnit = _db.Units.FirstOrDefault(u => u.IsActive);
         CleanupExpiredTask();
     }
+
+    #endregion
 
     public List<Unit> GetUnits() => _db.Units.ToList();
 
@@ -258,11 +319,28 @@ public class TaskManagerService : IDisposable
 
     public void SetActiveUnit(int unitId)
     {
-        ActiveUnit = _db.Units.FirstOrDefault(u => u.Id == unitId);
+        // clear old
+        var old = _db.Units.FirstOrDefault(u => u.IsActive);
+        if (old != null)
+        {
+            old.IsActive = false;
+            _db.Update(old);
+        }
+
+        // set new
+        var u = _db.Units.Find(unitId);
+        if (u != null)
+        {
+            u.IsActive = true;
+            _db.Update(u);
+            ActiveUnit = u;
+        }
+
+        _db.SaveChanges();
         NotifyStateChanged();
     }
 
-    public void AddUnit(string name, string unitClass)
+    public void AddUnit(string name, UnitClass unitClass)
     {
         Console.WriteLine($"[AddUnit] Adding unit: {name}");
         if (string.IsNullOrWhiteSpace(name)) return;
@@ -296,5 +374,30 @@ public class TaskManagerService : IDisposable
         {
             Console.WriteLine("[Service] Unit not found!");
         }
+    }
+    public void AddRandomUnit()
+    {
+        // pick a random class
+        var classes = Enum.GetValues<UnitClass>();
+        var cls = classes[_rng.Next(classes.Length)];
+
+        var first = _firstNames[_rng.Next(_firstNames.Count)];
+        var last = _surnames[_rng.Next(_surnames.Count)];
+        var name = $"{first} {last}";
+        // generate a name (or use a list of fantasy names)
+        //var name = $"Hero{_rng.Next(1000, 9999)}";
+
+        var unit = new Unit
+        {
+            Name = name,
+            Class = cls,
+            Level = 1,
+            Experience = 0,
+            ExperienceToNextLevel = 100
+        };
+
+        _db.Units.Add(unit);
+        _db.SaveChanges();
+        NotifyStateChanged();
     }
 }

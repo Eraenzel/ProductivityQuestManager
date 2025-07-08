@@ -6,7 +6,8 @@
 
         // Basic info
         public string Name { get; set; }
-        public string Class { get; set; }  // e.g. Warrior, Mage, Rogue
+        public UnitClass Class { get; set; }  // e.g. Warrior, Mage, Rogue
+        public bool IsActive { get; set; } = false;
 
         // Stats
         public int Level { get; set; } = 1;
@@ -22,5 +23,13 @@
         // Quest state
         public bool IsOnQuest { get; set; } = false;
         public List<QuestResult> QuestResults { get; set; }
+    }
+
+    public enum UnitClass
+    {
+        Warrior,
+        Mage,
+        Archer,
+        Rogue
     }
 }

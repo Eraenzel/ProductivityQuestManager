@@ -1,11 +1,12 @@
 ﻿@page "/units"
 @rendermode InteractiveServer
-@inject TaskManagerService TaskService
 @using ProductivityQuestManager.Data
-@implements IDisposable
+@inject TaskManagerService TaskService
 @inject IJSRuntime JS
+@implements IDisposable
 
 <h2 class="text-xl font-bold mb-4">Your Units</h2>
+
 <h3 class="font-semibold">🎯 Active Unit</h3>
 @if (TaskService.ActiveUnit != null)
 {
@@ -15,10 +16,8 @@
 }
 else
 {
-    <p class="text-sm text-red-500 mb-4">No active unit selected. Please go to the Units page to set one.</p>
+    <p class="text-sm text-red-500 mb-4">No active unit selected. Please add or set one below.</p>
 }
-
-<h2 class="text-xl font-bold mb-4">Your Tasks</h2>
 
 @if (!units.Any())
 {
@@ -30,11 +29,11 @@ else
         @foreach (var unit in units)
         {
             <li class="border p-3 rounded bg-white shadow">
-                <strong>@unit.Name</strong><br />
+                <strong>@unit.Name</strong> (<em>@unit.Class</em>)<br />
                 Level: @unit.Level<br />
                 XP: @unit.Experience / @unit.ExperienceToNextLevel
                 <br />
-                <button class="btn btn-secondary mt-2" @onclick="() => SetActive(unit.Id)">🎯 Set Active</button>
+                <button class="btn btn-secondary mt-2 mr-2" @onclick="() => SetActive(unit.Id)">🎯 Set Active</button>
                 <button class="btn btn-danger mt-2" @onclick="() => ConfirmDelete(unit.Id, unit.Name)">🗑 Release</button>
             </li>
         }
@@ -44,61 +43,69 @@ else
 <h3 class="mt-6 font-semibold text-lg">➕ Add New Unit</h3>
 <div class="mt-2 space-y-2">
     <input type="text" placeholder="Unit name" class="border p-2 rounded w-64" @bind="newUnitName" />
-    <input type="text" placeholder="Unit class" class="border p-2 rounded w-64" @bind="newUnitClass" />
+    <select class="border p-2 rounded w-64" @bind="newUnitClass">
+        <option value="">-- Choose Class --</option>
+        @foreach (var cls in Enum.GetValues<UnitClass>())
+        {
+            <option value="@cls">@cls</option>
+        }
+    </select>
     <button class="px-4 py-1 bg-blue-500 text-white rounded" @onclick="AddUnit">Add Unit</button>
 </div>
 
+<h3 class="mt-6 font-semibold text-lg">🎲 Generate Random Unit</h3>
+<button class="px-4 py-1 bg-purple-500 text-white rounded" @onclick="GenerateRandom">
+    Generate & Add Random Unit
+</button>
+
 @code {
     private List<Unit> units = new();
-    private string newUnitName = "";
-    private string newUnitClass = "";
+    private string newUnitName = string.Empty;
+    private UnitClass? newUnitClass = null;
 
     protected override void OnInitialized()
     {
         units = TaskService.GetUnits();
-        TaskService.OnChange += StateHasChanged;
-        {
-            units = TaskService.GetUnits();
-            StateHasChanged();
-        }
+        TaskService.OnChange += Refresh;
     }
 
     private void AddUnit()
-    {      
-        //Console.WriteLine("AddUnit called");
-        if (!string.IsNullOrWhiteSpace(newUnitName))
-        {
-            TaskService.AddUnit(newUnitName, newUnitClass);
-            newUnitName = "";
-            newUnitClass = "";
-            units = TaskService.GetUnits();           
-        }       
-    }
-
-    private async Task ConfirmDelete(int unitId, string unitName)
     {
-        bool confirmed = await JS.InvokeAsync<bool>("confirm", $"Are you sure you want to release {unitName}?");
-        if (confirmed)
-        {
-            TaskService.DeleteUnit(unitId);
-            units = TaskService.GetUnits(); // Reload list after deletion
-        }
-    }
+        if (string.IsNullOrWhiteSpace(newUnitName) || newUnitClass == null)
+            return;
 
-    private void DeleteUnit(int id)
-    {
-        //Console.WriteLine("Trying to delete from buttonm");
-        TaskService.DeleteUnit(id);
+        TaskService.AddUnit(newUnitName, newUnitClass.Value);
+        newUnitName = string.Empty;
+        newUnitClass = null;
         units = TaskService.GetUnits();
     }
 
-    public void Dispose()
+    private void SetActive(int id)
     {
-        TaskService.OnChange -= StateHasChanged;
+        TaskService.SetActiveUnit(id);
+        InvokeAsync(StateHasChanged);
     }
 
-    private void SetActive(int unitId)
+    private async Task ConfirmDelete(int id, string name)
     {
-        TaskService.SetActiveUnit(unitId);
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", $"Are you sure you want to release '{name}'?");
+        if (confirmed)
+        {
+            TaskService.DeleteUnit(id);
+            units = TaskService.GetUnits();
+        }
+    }
+
+    private void GenerateRandom()
+    {
+        TaskService.AddRandomUnit();
+        units = TaskService.GetUnits();
+    }
+
+    private void Refresh() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        TaskService.OnChange -= Refresh;
     }
 }
