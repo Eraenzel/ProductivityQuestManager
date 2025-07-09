@@ -1,0 +1,81 @@
+﻿@page "/unit/{Id:int}"
+@inject TaskManagerService TaskService
+@rendermode InteractiveServer
+@using ProductivityQuestManager.Data
+@using Microsoft.EntityFrameworkCore
+@implements IDisposable
+@inject AppDbContext Db
+
+<h2 class="text-xl font-bold mb-4">Unit Details</h2>
+
+@if (unit == null)
+{
+    <p class="text-red-500">Unit not found.</p>
+}
+else
+{
+    <div class="border p-4 rounded bg-white mb-6">
+        <h3 class="text-lg">@unit.Name (@unit.Class)</h3>
+        <p>Level: @unit.Level</p>
+        <p>HP: @unit.Health &nbsp;|&nbsp; ATK: @unit.Attack &nbsp;|&nbsp; DEF: @unit.Defense &nbsp;|&nbsp; SPD: @unit.Speed</p>
+        <p>XP: @unit.Experience / @unit.ExperienceToNextLevel</p>
+        <p>
+            <button class="btn btn-secondary mr-2" @onclick="() => TaskService.SetActiveUnit(unit.Id)">
+                🎯 Set Active
+            </button>
+            <button class="btn btn-danger" @onclick="() => TaskService.DeleteUnit(unit.Id)">
+                🗑 Release
+            </button>
+        </p>
+    </div>
+
+    <h4 class="text-lg font-semibold mb-2">Quest History</h4>
+    @if (history == null || !history.Any())
+    {
+        <p>No quests yet.</p>
+    }
+    else
+    {
+        <ul class="space-y-2">
+            @foreach (var r in history)
+            {
+                <li class="border p-2 rounded bg-gray-50">
+                    <strong>@r.Quest?.Name</strong> — @r.CompletedAt.ToLocalTime().ToString("g")<br />
+                    <em>@(r.WasSuccessful ? "✅" : "❌")</em>
+                    XP: @r.ExperienceGained &nbsp; Loot: @r.Loot
+                </li>
+            }
+        </ul>
+    }
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+    private Unit? unit;
+    private List<QuestResult>? history;
+
+    protected override void OnInitialized()
+    {
+        TaskService.OnChange += Refresh;
+        Load();
+    }
+
+    private void Load()
+    {
+        unit = TaskService.GetUnits().FirstOrDefault(u => u.Id == Id);
+
+        history = Db.QuestResults
+            .Include(r => r.Quest)
+            .Where(r => r.UnitId == Id)
+            .OrderByDescending(r => r.CompletedAt)
+            .ToList();   
+    }
+
+    private void Refresh()
+    {
+        Load();
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() => TaskService.OnChange -= Refresh;
+}

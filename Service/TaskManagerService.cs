@@ -232,8 +232,9 @@ public class TaskManagerService : IDisposable
             ExperienceGained = 10 + _rng.Next(10),
             Loot = "Manual Completion Reward"
         };
-        _db.QuestResults.Add(result);
+        _db.QuestResults.Add(result);        
         LastResult = result;
+        unit.QuestResults.Add(result);
 
         unit.Experience += result.ExperienceGained;
         if (unit.Experience >= unit.ExperienceToNextLevel)

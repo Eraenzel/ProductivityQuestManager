@@ -1,23 +1,11 @@
-﻿@page "/"
+﻿@page "/list"
 @rendermode InteractiveServer
 @using Microsoft.AspNetCore.Components.Forms
 @using ProductivityQuestManager.Data
 @inject TaskManagerService TaskService
 @implements IDisposable
 
-<h3 class="font-semibold">🎯 Active Unit</h3>
-@if (TaskService.ActiveUnit != null)
-{
-    <div class="mb-4 p-2 border rounded bg-gray-100">
-        <strong>@TaskService.ActiveUnit.Name</strong> (Lv @TaskService.ActiveUnit.Level)
-    </div>
-}
-else
-{
-    <p class="text-sm text-red-500 mb-4">No active unit selected. Please go to the Units page to set one.</p>
-}
-
-<h2 class="text-xl font-bold mb-4">Your Tasks</h2>
+<h2 class="text-xl font-bold mb-4">Start a Task</h2>
 @if (TaskService.Tasks == null)
 {
     <p>Loading tasks...</p>

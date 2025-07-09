@@ -16,8 +16,11 @@ else if (!questResults.Any())
 }
 else
 {
+    @* Determine how many to show *@
+    var displayCount = showAll ? questResults.Count : Math.Min(3, questResults.Count);
+
     <ul class="space-y-3">
-        @foreach (var result in questResults)
+        @foreach (var result in questResults.Take(displayCount))
         {
             <li class="border p-3 rounded bg-gray-100 shadow">
                 <strong>@result.Quest?.Name</strong><br />
@@ -28,10 +31,20 @@ else
             </li>
         }
     </ul>
+
+    @* Show toggle button if more exist *@
+    @if (questResults.Count > 3)
+    {
+        <button class="mt-4 px-4 py-2 bg-blue-500 text-white rounded"
+                @onclick="ToggleShowAll">
+            @(showAll ? "Show Less" : "Show All")
+        </button>
+    }
 }
 
 @code {
     private List<QuestResult>? questResults;
+    private bool showAll = false;
 
     protected override void OnInitialized()
     {
@@ -39,8 +52,12 @@ else
             .Include(q => q.Unit)
             .Include(q => q.Quest)
             .OrderByDescending(q => q.CompletedAt)
-            .Take(50) // Optional limit
             .ToList();
+    }
+
+    private void ToggleShowAll()
+    {
+        showAll = !showAll;
     }
 }
 

@@ -22,7 +22,7 @@
 
         // Quest state
         public bool IsOnQuest { get; set; } = false;
-        public List<QuestResult> QuestResults { get; set; }
+        public List<QuestResult> QuestResults { get; set; } = new();
     }
 
     public enum UnitClass

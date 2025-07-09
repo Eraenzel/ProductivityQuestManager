@@ -29,12 +29,21 @@ else
         @foreach (var unit in units)
         {
             <li class="border p-3 rounded bg-white shadow">
-                <strong>@unit.Name</strong> (<em>@unit.Class</em>)<br />
-                Level: @unit.Level<br />
-                XP: @unit.Experience / @unit.ExperienceToNextLevel
-                <br />
-                <button class="btn btn-secondary mt-2 mr-2" @onclick="() => SetActive(unit.Id)">🎯 Set Active</button>
-                <button class="btn btn-danger mt-2" @onclick="() => ConfirmDelete(unit.Id, unit.Name)">🗑 Release</button>
+                <NavLink class="block hover:bg-gray-50 p-2 rounded"
+                         href="@($"/unit/{unit.Id}")">
+                    <strong>@unit.Name</strong> (<em>@unit.Class</em>)<br />
+				</NavLink>
+				Level: @unit.Level — XP: @unit.Experience/@unit.ExperienceToNextLevel               
+                <div class="mt-2">
+                    <button class="btn btn-secondary mr-2"
+                                    @onclick="() => SetActive(unit.Id)">
+                    🎯 Set Active
+                    </button>
+                    <button class="btn btn-danger"
+                                    @onclick="() => ConfirmDelete(unit.Id, unit.Name)">
+                    🗑 Release
+                    </button>
+                </div>
             </li>
         }
     </ul>
