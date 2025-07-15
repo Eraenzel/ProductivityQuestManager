@@ -1,4 +1,5 @@
-﻿using ProductivityQuestManager.Data;
+﻿using Microsoft.EntityFrameworkCore;
+using ProductivityQuestManager.Data;
 using System.Text.Json;
 using System.Timers;
 
@@ -401,4 +402,66 @@ public class TaskManagerService : IDisposable
         _db.SaveChanges();
         NotifyStateChanged();
     }
+
+    // Start a new time entry
+    public void StartTimer(string? description = null, int? taskId = null)
+    {
+        // if there’s already a live timer, ignore or stop it first
+        if (ActiveTimer != null && ActiveTimer.StoppedAt == null) return;
+
+        var entry = new TimeEntry
+        {
+            TaskId = taskId,
+            Description = description ?? string.Empty,
+            StartedAt = DateTime.UtcNow
+        };
+        _db.TimeEntries.Add(entry);
+        _db.SaveChanges();
+        ActiveTimer = entry;
+        NotifyStateChanged();
+    }
+
+    // Stop the running timer
+    public void StopTimer()
+    {
+        if (ActiveTimer == null || ActiveTimer.StoppedAt != null) return;
+
+        ActiveTimer.StoppedAt = DateTime.UtcNow;
+        _db.Update(ActiveTimer);
+        _db.SaveChanges();
+        NotifyStateChanged();
+    }
+
+    // Edit an existing entry (in case you forgot to start/stop)
+    public void UpdateEntry(TimeEntry updated)
+    {
+        _db.Update(updated);
+        _db.SaveChanges();
+        NotifyStateChanged();
+    }
+
+    // Pull recent entries for display
+    public List<TimeEntry> GetRecentEntries(int count = 10)
+    {
+        return _db.TimeEntries
+                 .Include(e => e.Task)
+                 .OrderByDescending(e => e.StartedAt)
+                 .Take(count)
+                 .ToList();
+    }
+
+    /// <summary>
+    /// Returns the elapsed time on the active timer (or zero if none).
+    /// </summary>
+    public TimeSpan GetActiveTimerElapsed()
+    {
+        if (ActiveTimer == null)
+            return TimeSpan.Zero;
+
+        // not stopped yet, so measure against Now
+        var end = ActiveTimer.StoppedAt ?? DateTime.UtcNow;
+        return end - ActiveTimer.StartedAt;
+    }
+
+    public TimeEntry? ActiveTimer { get; private set; }
 }

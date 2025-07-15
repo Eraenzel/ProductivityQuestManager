@@ -1,0 +1,98 @@
+﻿@page "/tracker"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Forms
+@using ProductivityQuestManager.Data
+@implements IDisposable
+@inject TaskManagerService TaskService
+
+<h3 class="text-lg font-semibold mb-2">⏱ Time Tracker</h3>
+
+<div class="flex items-center space-x-2 mb-4">
+    @if (TaskService.ActiveTimer == null || TaskService.ActiveTimer.StoppedAt != null)
+    {
+        <input type="text"
+               placeholder="Description…"
+               class="border p-2 rounded w-64 mr-2"
+               @bind="newDescription" />
+
+        <button class="btn btn-primary" @onclick="StartTracking">▶ Start</button>
+    }
+    else if (TaskService.ActiveTimer?.StoppedAt == null)
+    {
+        <input type="text" disabled             
+               class="border p-2 rounded w-64 mr-2"
+               @bind="newDescription" />
+        <button class="btn btn-danger" @onclick="StopTracking">■ Stop</button>
+        <!-- LIVE DURATION DISPLAY -->
+    <span class="ml-4 font-mono">
+    @TaskService.GetActiveTimerElapsed().ToString(@"hh\:mm\:ss")
+    </span>      
+    }
+</div>
+
+<h4 class="mt-6">Recent Entries</h4>
+<ul class="space-y-2">
+    @foreach (var e in TaskService.GetRecentEntries())
+    {
+        <li class="border p-2 rounded bg-gray-50">
+            <div class="flex justify-between">
+                <span>@(e.Task?.Title ?? e.Description) </span> –
+                <span>@(e.Duration?.ToString(@"hh\:mm\:ss") ?? "...")</span>
+            </div>
+            <div class="text-xs text-gray-600">
+                @e.StartedAt.ToLocalTime()
+                @(e.StoppedAt.HasValue ? $"– {e.StoppedAt.Value.ToLocalTime()}" : "")
+            </div>
+            <button class="text-xs text-blue-600" @onclick="() => Edit(e)">Edit</button>
+        </li>
+    }
+</ul>
+
+@code {
+    private void Edit(TimeEntry e)
+    {
+        // e.g. navigate to a modal or separate edit page
+        // NavigationManager.NavigateTo($"/timeentry/{e.Id}");
+    }
+
+    private string newDescription = string.Empty;
+    private System.Timers.Timer? _uiTimer;
+
+    protected override void OnInitialized()
+    {
+        // repaint on service changes
+        TaskService.OnChange += StateHasChanged;
+
+        // repaint every second so the elapsed time updates
+        _uiTimer = new System.Timers.Timer(1000);
+        _uiTimer.Elapsed += (_, __) =>
+        {
+            if (TaskService.ActiveTimer?.StoppedAt == null)
+                InvokeAsync(StateHasChanged);
+        };
+    }
+
+    private void StartTracking()
+    {    
+        TaskService.StartTimer(newDescription);
+        newDescription = string.Empty;
+        _uiTimer?.Start();
+    }
+
+    private void StopTracking()
+    {
+        TaskService.StopTimer();
+        _uiTimer?.Stop();
+    }
+
+
+    public void Dispose()
+    {
+        TaskService.OnChange -= StateHasChanged;
+        if (_uiTimer != null)
+        {
+            _uiTimer?.Stop();
+            _uiTimer?.Dispose();
+        }
+    }
+}
