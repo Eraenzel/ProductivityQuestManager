@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ProductivityQuestManager.Data;
 
@@ -10,9 +11,11 @@ using ProductivityQuestManager.Data;
 namespace ProductivityQuestManager.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250717132449_AddedTagsInTimeEntry")]
+    partial class AddedTagsInTimeEntry
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.6");
@@ -91,7 +94,7 @@ namespace ProductivityQuestManager.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Tags");
+                    b.ToTable("Tag");
                 });
 
             modelBuilder.Entity("ProductivityQuestManager.Data.TaskModel", b =>
@@ -174,7 +177,7 @@ namespace ProductivityQuestManager.Migrations
 
                     b.HasIndex("TagId");
 
-                    b.ToTable("TimeEntryTags");
+                    b.ToTable("TimeEntryTag");
                 });
 
             modelBuilder.Entity("ProductivityQuestManager.Data.Unit", b =>

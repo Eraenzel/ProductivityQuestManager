@@ -36,10 +36,15 @@
                     <tr>
                         @foreach (var day in week)
                         {
-                            var cls = GetIntensity(day.Count);
+                            var color = GetColor(day.Count);
+
                             <td class="p-1">
-                                <div class="w-6 h-6 mx-auto rounded border border-gray-400 @cls"
-                                     title="@day.Date.ToString("yyyy-MM-dd"): @day.Count entries">
+                                <div style="
+                                    width: 1.5rem; height: 1.5rem;
+                                    background-color: @color;
+                                    border: 1px solid #9CA3AF;
+                                    border-radius: 0.25rem;"
+                                     title="@day.Date: @day.Count entries">
                                 </div>
                             </td>
                         }
@@ -166,4 +171,14 @@ else
         public DateTime Date { get; set; }
         public int Count { get; set; }
     }
+
+    private string GetColor(int count) => count switch
+    {
+        -1 => "transparent",    // padding cells
+        0 => "#D1D5DB",         // gray-300
+        1 => "#86EFAC",         // green-300
+        >= 5 => "#166534",      // green-700
+        >= 3 => "#059669",      // green-600
+        _ => "#10B981"          // green-500
+    };
 }

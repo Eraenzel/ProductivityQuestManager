@@ -433,10 +433,16 @@ public class TaskManagerService : IDisposable
     }
 
     // Edit an existing entry (in case you forgot to start/stop)
-    public void UpdateEntry(TimeEntry updated)
+    public void UpdateEntry(int id, string description, DateTime start, DateTime? stop)
     {
-        _db.Update(updated);
+        var entry = _db.TimeEntries.Find(id);
+        if (entry == null) return;
+        entry.Description = description;
+        entry.StartedAt = start;
+        entry.StoppedAt = stop;
+        _db.Update(entry);
         _db.SaveChanges();
+        LoadState();
         NotifyStateChanged();
     }
 
@@ -444,15 +450,14 @@ public class TaskManagerService : IDisposable
     public List<TimeEntry> GetRecentEntries(int count = 10)
     {
         return _db.TimeEntries
-                 .Include(e => e.Task)
-                 .OrderByDescending(e => e.StartedAt)
-                 .Take(count)
-                 .ToList();
+                .Include(e => e.Task)
+                .Include(e => e.TimeEntryTags)
+                .ThenInclude(tet => tet.Tag)
+                .OrderByDescending(e => e.StartedAt)
+                .Take(count)
+                .ToList();
     }
 
-    /// <summary>
-    /// Returns the elapsed time on the active timer (or zero if none).
-    /// </summary>
     public TimeSpan GetActiveTimerElapsed()
     {
         if (ActiveTimer == null)
@@ -464,4 +469,43 @@ public class TaskManagerService : IDisposable
     }
 
     public TimeEntry? ActiveTimer { get; private set; }
+
+    public List<Tag> GetAllTags() =>
+    _db.Tags.OrderBy(t => t.Name).ToList();
+
+    public void AddTagIfNotExists(string name)
+    {
+        if (_db.Tags.Any(t => t.Name == name)) return;
+        _db.Tags.Add(new Tag { Name = name });
+        _db.SaveChanges();
+    }
+
+    public void AssignTags(int entryId, IEnumerable<string> tagNames)
+    {
+        var entry = _db.TimeEntries
+            .Include(te => te.TimeEntryTags)
+            .FirstOrDefault(te => te.Id == entryId);
+        if (entry == null) return;
+
+        // ensure tags exist
+        foreach (var name in tagNames)
+            AddTagIfNotExists(name);
+
+        // clear existing
+        entry.TimeEntryTags.Clear();
+
+        // re-fetch tags & assign
+        var tags = _db.Tags.Where(t => tagNames.Contains(t.Name)).ToList();
+        foreach (var tag in tags)
+            entry.TimeEntryTags.Add(new TimeEntryTag
+            {
+                TimeEntry = entry,
+                Tag = tag
+            });
+
+        _db.Update(entry);
+        _db.SaveChanges();
+        LoadState();
+        NotifyStateChanged();
+    }
 }

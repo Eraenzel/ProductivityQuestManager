@@ -14,6 +14,35 @@
                placeholder="Description…"
                class="border p-2 rounded w-64 mr-2"
                @bind="newDescription" />
+        <!-- tag picker -->
+        <div class="flex items-center">
+            <input list="tag-options"
+                   placeholder="Add or select tag…"
+                   class="border p-2 rounded mr-2"
+                   @bind="tagInput" />
+            <datalist id="tag-options">
+                @foreach (var t in allTags)
+                {
+                    <option value="@t.Name" />
+                }
+            </datalist>
+            <button class="btn btn-sm btn-outline-secondary"
+                    @onclick="AddTag">
+                + Tag
+            </button>
+        </div>
+
+        <!-- chips of selected tags -->
+        <div class="flex flex-wrap mt-2">
+            @foreach (var t in selectedTags)
+            {
+                <span class="inline-flex items-center bg-blue-200 text-blue-800 px-2 py-0.5 rounded mr-1 mb-1 text-xs">
+                    @t.Name
+                    <button class="ml-1 text-xs" @onclick="() => RemoveTag(t)">×</button>
+                </span>
+            }
+        </div>
+
 
         <button class="btn btn-primary" @onclick="StartTracking">▶ Start</button>
     }
@@ -30,6 +59,56 @@
     }
 </div>
 
+@* Inline Edit Form *@
+<div class="flex items-center space-x-2 mb-4">
+    @if (!string.IsNullOrEmpty(saveError))
+    {
+        <p class="text-red-600 font-semibold">@saveError</p>
+    }
+    @if (editingId.HasValue)
+    {
+        <p>✏️ Edit Entry @editingId</p>
+        <p>Description</p>
+        <input type="text" @bind="editDescription" class="border p-2 rounded w-full" />
+        <!-- tag picker -->
+        <div class="flex items-center">
+            <input list="tag-options"
+                   placeholder="Add or select tag…"
+                   class="border p-2 rounded mr-2"
+                   @bind="tagInput" />
+            <datalist id="tag-options">
+                @foreach (var t in allTags)
+                {
+                    <option value="@t.Name" />
+                }
+            </datalist>
+            <button class="btn btn-sm btn-outline-secondary"
+                    @onclick="AddTag">
+                + Tag
+            </button>
+        </div>
+
+        <!-- chips of selected tags -->
+        <div class="flex flex-wrap mt-2">
+            @foreach (var t in selectedTags)
+            {
+                <span class="inline-flex items-center bg-blue-200 text-blue-800 px-2 py-0.5 rounded mr-1 mb-1 text-xs">
+                    @t.Name
+                    <button class="ml-1 text-xs" @onclick="() => RemoveTag(t)">×</button>
+                </span>
+            }
+        </div>
+        <p>Start Time</p>
+        <input type="datetime-local" value="@editStartLocal"
+               @onchange="e => editStartLocal = e.Value?.ToString() ?? editStartLocal" class="border p-2 rounded w-full" />
+        <p>Stop Time</p>
+        <input type="datetime-local" value="@editStopLocal"
+               @onchange="e => editStopLocal = e.Value?.ToString() ?? editStopLocal" class="border p-2 rounded w-full" />
+        <button class="px-4 py-1 bg-green-500 text-white rounded" @onclick="() => SaveEdit(editingId.Value)"> 💾 Save</button>
+        <button class="px-4 py-1 bg-gray-300 text-black rounded" @onclick="CancelEdit"> Cancel</button>
+    }
+</div>
+
 <h4 class="mt-6">Recent Entries</h4>
 <ul class="space-y-2">
     @foreach (var e in TaskService.GetRecentEntries())
@@ -38,28 +117,46 @@
             <div class="flex justify-between">
                 <span>@(e.Task?.Title ?? e.Description) </span> –
                 <span>@(e.Duration?.ToString(@"hh\:mm\:ss") ?? "...")</span>
+                @foreach (var tet in e.TimeEntryTags)
+                {
+                    <span class="inline-block bg-blue-200 text-blue-800 px-2 py-0.5 rounded mr-1 text-xs">
+                        @tet.Tag.Name
+                    </span>
+                }
             </div>
             <div class="text-xs text-gray-600">
                 @e.StartedAt.ToLocalTime()
                 @(e.StoppedAt.HasValue ? $"– {e.StoppedAt.Value.ToLocalTime()}" : "")
             </div>
-            <button class="text-xs text-blue-600" @onclick="() => Edit(e)">Edit</button>
+            <button class="text-xs text-blue-600" @onclick="() => BeginEdit(e)">Edit</button>
         </li>
     }
 </ul>
 
 @code {
-    private void Edit(TimeEntry e)
-    {
-        // e.g. navigate to a modal or separate edit page
-        // NavigationManager.NavigateTo($"/timeentry/{e.Id}");
-    }
-
     private string newDescription = string.Empty;
     private System.Timers.Timer? _uiTimer;
 
+    // Inline edit state
+    private int? editingId;
+    private string editDescription = string.Empty;
+    private string editStartLocal = "";
+    private string editStopLocal = "";
+    private List<int> editSelectedTagIds = new();
+    private DateTime editStart;
+    private DateTime? editStop;
+    private string saveError = "";
+    private string newTagsRaw = "";
+    private string editTagsRaw = "";
+    private List<Tag> allTags = new();
+    private List<Tag> selectedTags = new();
+    private List<int> selectedTagIds = new();
+    private string tagInput = "";
+
+
     protected override void OnInitialized()
     {
+        allTags = TaskService.GetAllTags();
         // repaint on service changes
         TaskService.OnChange += StateHasChanged;
 
@@ -73,9 +170,17 @@
     }
 
     private void StartTracking()
-    {    
+    {   
         TaskService.StartTimer(newDescription);
+        if (TaskService.ActiveTimer != null && selectedTagIds.Any())
+        {
+            TaskService.AssignTags(
+                TaskService.ActiveTimer.Id,
+                selectedTags.Select(t => t.Name));
+        }
         newDescription = string.Empty;
+        selectedTagIds.Clear();
+        selectedTags.Clear();
         _uiTimer?.Start();
     }
 
@@ -83,6 +188,97 @@
     {
         TaskService.StopTimer();
         _uiTimer?.Stop();
+    }
+
+    private void BeginEdit(TimeEntry e)
+    {
+        editingId = e.Id;
+        editDescription = e.Description;
+        editSelectedTagIds = e.TimeEntryTags
+        .Select(tet => tet.TagId)
+        .ToList();
+        editStart = e.StartedAt;
+        editStop = e.StoppedAt;
+        editStartLocal = e.StartedAt.ToString("yyyy-MM-ddTHH:mm");
+        editStopLocal = e.StoppedAt?.ToString("yyyy-MM-ddTHH:mm") ?? "";
+        // seed editTagsRaw from existing tags
+        editTagsRaw = string.Join(", ",
+          e.TimeEntryTags.Select(tet => tet.Tag.Name));
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void CancelEdit()
+    {
+        editingId = null;
+    }
+
+    private void SaveEdit(int id)
+    {
+        var entry = TaskService.GetRecentEntries().FirstOrDefault(x => x.Id == id);
+        var newStart = DateTime.Parse(editStartLocal);
+        DateTime? newStop = string.IsNullOrWhiteSpace(editStopLocal)
+            ? (DateTime?)null
+            : DateTime.Parse(editStopLocal);
+        if (newStop.HasValue && (newStop - newStart) > TimeSpan.FromDays(1))
+        {
+            saveError = "❌ Duration cannot exceed 24 hours.";
+            return;
+        }
+
+        saveError = "";
+
+        if (entry != null)
+        {
+            entry.Description = editDescription;
+            entry.StartedAt = newStart;
+            entry.StoppedAt = newStop;
+            TaskService.UpdateEntry(id, entry.Description, entry.StartedAt, entry.StoppedAt);
+
+            var names = selectedTags.Select(t => t.Name);
+            TaskService.AssignTags(id, names);
+        }
+        editingId = null;
+        selectedTags.Clear();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnTagsChanged(ChangeEventArgs e)
+    {
+        // for a <select multiple> Blazor will put string[] into e.Value
+        if (e.Value is string[] values)
+        {
+            selectedTagIds = values
+                .Select(v => int.TryParse(v, out var id) ? id : -1)
+                .Where(id => id >= 0)
+                .ToList();
+        }
+
+        StateHasChanged();
+    }
+
+    void AddTag()
+    {
+        var name = tagInput?.Trim();
+        if (string.IsNullOrEmpty(name))
+            return;
+
+        // 1) ensure it exists in the DB
+        TaskService.AddTagIfNotExists(name);
+
+        // 2) refresh your master list
+        allTags = TaskService.GetAllTags();
+
+        // 3) add to selectedTags if not already there
+        var tag = allTags.FirstOrDefault(t => t.Name == name);
+        if (tag != null && selectedTags.All(t => t.Id != tag.Id))
+            selectedTags.Add(tag);
+
+        tagInput = "";
+    }
+
+    void RemoveTag(Tag t)
+    {
+        selectedTags.Remove(t);
     }
 
 
