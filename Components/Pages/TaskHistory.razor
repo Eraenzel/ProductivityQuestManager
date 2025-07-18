@@ -16,7 +16,7 @@
     else
     {
         <!-- Debug counter -->
-        <p class="text-xs text-gray-400">Days generated: @CalendarDays.Count</p>
+        //<p class="text-xs text-gray-400">Days generated: @CalendarDays.Count</p>
         <!-- Calendar table -->
         <table class="w-full table-fixed text-xs text-center border-collapse mb-2">
             <thead>
@@ -37,14 +37,30 @@
                         @foreach (var day in week)
                         {
                             var color = GetColor(day.Count);
+                            var cls = GetIntensity(day.Count);
+                            var txtCol = day.Count >= 3 ? "#fff" : "#111";
+                            var isToday = day.Date.Date == DateTime.Today;
+                            var borderCol = isToday ? "#2563EB" /* blue-600 */ : "#9CA3AF" /* gray-400 */;
+                            var borderSize = isToday ? "2px" : "1px";
 
                             <td class="p-1">
-                                <div style="
-                                    width: 1.5rem; height: 1.5rem;
-                                    background-color: @color;
-                                    border: 1px solid #9CA3AF;
-                                    border-radius: 0.25rem;"
-                                     title="@day.Date: @day.Count entries">
+                                <div class="calendar-cell" style="
+                                width:2rem;
+                                height:2rem;
+                                display:flex;
+                                align-items:center;
+                                justify-content:center;
+                                border: @borderSize solid @borderCol;
+                                border-radius:0.5rem;
+                                background-color:@color;
+                                color:@txtCol;
+                                font-size:0.75rem;
+                                font-weight:bold;"
+									 title="@(day.Count < 0 ? "" : $"{day.Date:yyyy-MM-dd}: {day.Count} entries")">
+                                     @if (day.Count >= 0)
+                                     {
+                                         @day.Date.Day
+                                     }                                   
                                 </div>
                             </td>
                         }
@@ -136,7 +152,7 @@ else
         // Pad first week until Monday
         var firstWeekday = ((int)CalendarDays[0].Date.DayOfWeek + 6) % 7; // Monday=0
         for (int i = 0; i < firstWeekday; i++)
-            week.Add(new CalendarDay { Date = default(DateTime), Count = -1 });
+            week.Add(new CalendarDay { Date = default, Count = -1 });
 
         foreach (var day in CalendarDays)
         {
@@ -149,21 +165,18 @@ else
         }
         // Pad last week
         while (week.Count < 7)
-            week.Add(new CalendarDay { Date = default(DateTime), Count = -1 });
+            week.Add(new CalendarDay { Date = default, Count = -1 });
         Weeks.Add(week);
     }
 
     private string GetIntensity(int count)
     {
-        if (count < 0) return "bg-transparent";
-        return count switch
-        {
-            0 => "bg-gray-300",
-            1 => "bg-green-300",
-            >= 5 => "bg-green-700",
-            >= 3 => "bg-green-600",
-            _ => "bg-green-500"
-        };
+        if (count < 0) return "calendar-empty";
+        if (count == 0) return "calendar-0";
+        if (count == 1) return "calendar-1";
+        if (count >= 5) return "calendar-5";
+        if (count >= 3) return "calendar-3";
+        return "calendar-2";
     }
 
     private class CalendarDay

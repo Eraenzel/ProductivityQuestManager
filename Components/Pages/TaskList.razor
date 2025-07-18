@@ -16,30 +16,60 @@ else if (!TaskService.Tasks.Any())
 }
 else
 {
+    @* At the very top, show the running timer if there is one *@
+    @if (TaskService.ActiveTimer is { StoppedAt: null } active)
+    {
+        <div class="mb-4 p-4 bg-yellow-100 rounded flex items-center space-x-4">
+            <div class="flex-1">
+                <strong>Tracking:</strong> @active.Description
+            </div>
+            <div class="font-mono">
+                @TaskService.GetActiveTimerElapsed().ToString(@"hh\:mm\:ss")
+            </div>
+            <button class="btn btn-danger" @onclick="() => TaskService.StopTimer()">■ Stop</button>
+        </div>
+    }
+
+    <EditForm Model="this">
+        <InputRadioGroup @bind-Value="SelectedMode">
+            <label class="mr-4">
+                <InputRadio Value="TaskMode.Timer" /> Timer (fixed-duration)
+            </label>
+            <label>
+                <InputRadio Value="TaskMode.Tracker" /> Tracker (start/stop)
+            </label>
+        </InputRadioGroup>
+    </EditForm>
+
     <ul class="space-y-3">
+            
         @foreach (var task in TaskService.Tasks.Where(t => !t.IsCompleted || t.IsRepeatable))
         {
             var isCoolingDown = TaskService.IsCoolingDown(task);
             var isDisabled = isCoolingDown || TaskService.ActiveUnit == null || TaskService.ActiveTask != null;
 
             <li class="border p-3 rounded bg-white shadow">
-                <strong>@task.Title</strong><br />
-                Duration: @task.DurationMinutes minutes<br />
-                @if (task.IsRepeatable)
-                {
-                    <span class="text-sm text-blue-600">Repeatable</span>
-        
-                    <br />
-                }
+                
                 @if (TaskService.ActiveUnit == null)
                 {
                     <p class="text-sm text-red-500">No unit selected.</p>
                 }
+                @if (SelectedMode == TaskMode.Timer)
+                {
+                    <strong>@task.Title</strong> <br />
+                    <p>Duration: @task.DurationMinutes minutes</p>
+                    @if (task.IsRepeatable)
+                    {
+                        <span class="text-sm text-blue-600">Repeatable</span><br />
+                    }
 
-                <button class="btn btn-primary" @onclick="() => StartTask(task)"
-                        disabled="@(TaskService.IsCoolingDown(task) || TaskService.ActiveUnit == null || TaskService.ActiveTask != null)">
-                    ▶ Start
-                </button>
+                    <button class="btn btn-primary"
+                            @onclick="() => StartTask(task)"
+                            disabled="@(TaskService.IsCoolingDown(task) || TaskService.ActiveUnit == null || TaskService.ActiveTask != null)">
+                        ▶ Timer
+                    </button>
+                
+        
                 <button class="btn btn-danger" @onclick="() => TaskService.DeleteTask(task)"
                         disabled="@((TaskService.ActiveTask != null && TaskService.ActiveTask.Id == task.Id))">
                     🗑 Delete
@@ -62,8 +92,90 @@ else
                 {
                     <span class="text-green-700">✅ Completed</span>
                 }
+                }
+                else
+            {
+                <div class="flex items-center space-x-2 mb-4">
+
+                    @* Description field *@
+                    @if (!IsEditing)
+                    {
+                        <input type="text"
+                               class="border p-2 rounded w-64"
+                               placeholder="Description…"
+                               @bind="newDescription" />
+                    }
+                    else
+                    {
+                        <input type="text"
+                               class="border p-2 rounded w-64"
+                               placeholder="Edit description…"
+                               @bind="editDescription" />
+                    }
+
+                    @* Tag picker *@
+                    <input type="text"
+                           list="tag-options"
+                           class="border p-2 rounded"
+                           placeholder="Add or select tag…"
+                           @bind="tagInput" />
+                    <datalist id="tag-options">
+                        @foreach (var t in allTags)
+                        {
+                            <option value="@t.Name" />
+                        }
+                    </datalist>
+                    <button class="px-2 py-1 bg-gray-200 rounded" @onclick="AddTag">+ Tag</button>
+
+                    @* Chips of selected tags *@
+                    @foreach (var t in selectedTags)
+                    {
+                        <span class="inline-flex items-center bg-blue-200 text-blue-800 px-2 py-0.5 rounded mr-1 text-xs">
+                            @t.Name
+                            <button class="ml-1 text-xs" @onclick="() => RemoveTag(t)">×</button>
+                        </span>
+                    }
+
+                    @* Start vs. Save/Cancel *@
+                    @if (!IsEditing)
+                    {
+                        <button class="px-4 py-2 bg-blue-600 text-white rounded" @onclick="StartTracking">
+                            ▶ Start
+                        </button>
+                    }
+                    else
+                    {
+                        <button class="px-4 py-2 bg-green-600 text-white rounded" @onclick="() => SaveEdit(editingId.Value)">
+                            💾 Save
+                        </button>
+                        <button class="px-4 py-2 bg-gray-300 text-black rounded" @onclick="CancelEdit">
+                            Cancel
+                        </button>
+                    }
+
+                </div>
+
+
+                @* Inline Edit Form *@
+                @if (!string.IsNullOrEmpty(saveError))
+                {
+                    <p class="text-red-600 font-semibold">@saveError</p>
+                }
+            } 
             </li>
         }
+            <h3 class="mt-6 font-semibold text-lg">➕ Add New Task</h3>
+            <div class="mt-2 space-y-2">
+                <input type="text" placeholder="Task title" class="border p-2 rounded w-64" @bind="newTaskTitle" />
+                <input type="number" placeholder="Duration (min)" class="border p-2 rounded w-32" @bind="newTaskDuration" />
+                <label class="flex items-center space-x-2">
+                    <input type="checkbox" @bind="newTaskIsRepeatable" />
+                    <span>Repeatable?</span>
+                </label>
+                <button class="px-4 py-1 bg-blue-500 text-white rounded" @onclick="AddTask">Add Task</button>
+            </div>
+        
+               
     </ul>
     <p class="mt-4 text-blue-600 font-semibold">@statusMessage</p>
 }
@@ -102,24 +214,30 @@ else
     }
 </div>
 
-<h3 class="mt-6 font-semibold text-lg">➕ Add New Task</h3>
-<div class="mt-2 space-y-2">
-    <input type="text" placeholder="Task title" class="border p-2 rounded w-64" @bind="newTaskTitle" />
-    <input type="number" placeholder="Duration (min)" class="border p-2 rounded w-32" @bind="newTaskDuration" />
-    <label class="flex items-center space-x-2">
-        <input type="checkbox" @bind="newTaskIsRepeatable" />
-        <span>Repeatable?</span>
-    </label>
-    <button class="px-4 py-1 bg-blue-500 text-white rounded" @onclick="AddTask">Add Task</button>
-</div>
-
 @code {
+    private enum TaskMode { Timer, Tracker }
+    private TaskMode SelectedMode { get; set; } = TaskMode.Timer;
     private string statusMessage = "";
 
     private string newTaskTitle = "";
     private int newTaskDuration = 5;
     private bool newTaskIsRepeatable = false;
     private System.Timers.Timer? refreshTimer;
+
+    private string newDescription = "";
+    private string tagInput = "";
+    private List<Tag> allTags = new();
+    private List<Tag> selectedTags = new();
+
+    private int? editingId;
+    private bool IsEditing => editingId.HasValue;
+
+    private string editDescription = "";
+    private string editStartLocal = "";
+    private string editStopLocal = "";
+    private string saveError = "";
+
+    private System.Timers.Timer? _uiTimer;
 
     protected override void OnInitialized()
     {
@@ -183,6 +301,77 @@ else
                       $"=> CanStart={canStart}");
         
         return canStart;
+    }
+    private void StartTracking()
+    {
+        TaskService.StartTimer(newDescription);
+        if (TaskService.ActiveTimer != null && selectedTags.Any())
+            TaskService.AssignTags(TaskService.ActiveTimer.Id, selectedTags.Select(t => t.Name));
+        newDescription = "";
+        selectedTags.Clear();
+        _uiTimer?.Start();
+    }
+
+    private void StopTracking()
+    {
+        TaskService.StopTimer();
+        _uiTimer?.Stop();
+    }
+
+    private void AddTag()
+    {
+        var name = tagInput?.Trim();
+        if (string.IsNullOrEmpty(name)) return;
+
+        TaskService.AddTagIfNotExists(name);
+        allTags = TaskService.GetAllTags();
+
+        var tag = allTags.FirstOrDefault(t => t.Name == name);
+        if (tag != null && selectedTags.All(t => t.Id != tag.Id))
+            selectedTags.Add(tag);
+
+        tagInput = "";
+    }
+
+    private void RemoveTag(Tag t) => selectedTags.Remove(t);
+
+    private void BeginEdit(TimeEntry e)
+    {
+        editingId = e.Id;
+        editDescription = e.Description;
+        editStartLocal = e.StartedAt.ToString("yyyy-MM-ddTHH:mm");
+        editStopLocal = e.StoppedAt?.ToString("yyyy-MM-ddTHH:mm") ?? "";
+        saveError = "";
+        selectedTags = e.TimeEntryTags.Select(t => t.Tag).ToList();
+    }
+
+    private void CancelEdit()
+    {
+        editingId = null;
+        selectedTags.Clear();
+    }
+
+    private void SaveEdit(int id)
+    {
+        var entry = TaskService.GetRecentEntries().FirstOrDefault(x => x.Id == id);
+        if (entry == null) return;
+
+        var newStart = DateTime.Parse(editStartLocal);
+        DateTime? newStop = string.IsNullOrWhiteSpace(editStopLocal)
+            ? null
+            : DateTime.Parse(editStopLocal);
+
+        if (newStop.HasValue && (newStop - newStart) > TimeSpan.FromDays(1))
+        {
+            saveError = "❌ Duration cannot exceed 24 hours.";
+            return;
+        }
+
+        saveError = "";
+        TaskService.UpdateEntry(id, editDescription, newStart, newStop);
+        TaskService.AssignTags(id, selectedTags.Select(t => t.Name));
+        editingId = null;
+        selectedTags.Clear();
     }
     
 }
