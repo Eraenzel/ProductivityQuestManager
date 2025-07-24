@@ -102,25 +102,84 @@ else
         </button>
     }
 }
-
+@if (history != null)
+{
+<ul>
+    @foreach (var item in history.Take(showAll ? history.Count : 5))
+    {
+        <li>
+            <strong>@item.Title</strong> (@item.Type) —
+            @item.Duration.ToString(@"hh\:mm\:ss") —
+            XP: @item.ExperienceGained —
+            Tags: @string.Join(", ", item.Tags)
+        </li>
+    }
+</ul>
+@if (history.Count > 5)
+{
+    <button @onclick="ToggleShowAll">@((showAll) ? "Show Less" : "Show All")</button>
+}
+}
 @code {
     private List<QuestResult>? questResults;
     private bool showAll = false;
     private List<CalendarDay> CalendarDays = new();
     private List<List<CalendarDay>> Weeks = new();
 
+    List<CompletedTaskDTO> history;
+    DateTime filterStart, filterEnd;
+    TaskType? filterType;
+    List<string> filterTags = new();
+
     protected override void OnInitialized()
     {
-        questResults = Db.QuestResults
+        /*questResults = Db.QuestResults
             .Include(q => q.Unit)
             .Include(q => q.Quest)
             .OrderByDescending(q => q.CompletedAt)
-            .ToList();
+            .ToList();*/
 
         BuildCalendar();
+        filterEnd = DateTime.Today.AddDays(1).AddTicks(-1);
+        filterStart = filterEnd.AddDays(-30);
+        LoadHistory();
     }
 
     private void ToggleShowAll() => showAll = !showAll;
+
+    void LoadHistory()
+    {
+        var query = Db.Tasks
+          .Include(t => t.TaskTags).ThenInclude(tt => tt.Tag)
+          .Include(t => t.QuestResults)         // if you link quests back to tasks
+          .Where(t => t.LastCompletedAt != null
+                   && t.LastCompletedAt >= filterStart
+                   && t.LastCompletedAt <= filterEnd);
+
+        if (filterType.HasValue)
+            query = query.Where(t => t.Type == filterType);
+
+        if (filterTags.Any())
+            query = query.Where(t => t.TaskTags.Any(tt => filterTags.Contains(tt.Tag.Name)));
+
+        history = query
+          .OrderByDescending(t => t.LastCompletedAt)
+          .Select(t => new CompletedTaskDTO
+          {
+              CompletedAt = t.LastCompletedAt.Value,
+              Title = t.Title,
+              Type = t.Type,
+              Duration = t.Type == TaskType.Timer
+                               ? TimeSpan.FromMinutes(t.DurationMinutes)
+                               : (t.LastCompletedAt.Value - t.StartedAt.Value),
+              Tags = t.TaskTags.Select(tt => tt.Tag.Name).ToList(),
+              ExperienceGained = t.QuestResults
+                                .OrderByDescending(r => r.CompletedAt)
+                                .Select(r => r.ExperienceGained)
+                                .FirstOrDefault()
+          })
+          .ToList();
+    }
 
     private void BuildCalendar()
     {

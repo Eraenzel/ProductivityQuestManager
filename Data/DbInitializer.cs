@@ -30,11 +30,11 @@ namespace ProductivityQuestManager.Data
             // Add Tasks
             var tasks = new List<TaskModel>
             {
-                new TaskModel { Title = "Write CV", DurationMinutes = 30, IsRepeatable = false, IsCompleted = false },
-                new TaskModel { Title = "Clean Desk", DurationMinutes = 15, IsRepeatable = false, IsCompleted = false  },
-                new TaskModel { Title = "Learn Blazor", DurationMinutes = 45, IsRepeatable = false, IsCompleted = false },
-                new TaskModel { Title = "Daily Planning", DurationMinutes = 5, IsRepeatable = true, CooldownMinutes = 15 },
-                new TaskModel { Title = "Stretching", DurationMinutes = 2, IsRepeatable = true, CooldownMinutes = 10 }
+                new TaskModel { Title = "Write CV", DurationMinutes = 30 },
+                new TaskModel { Title = "Clean Desk", DurationMinutes = 15 },
+                new TaskModel { Title = "Learn Blazor", DurationMinutes = 45},
+                new TaskModel { Title = "Daily Planning", DurationMinutes = 5, },
+                new TaskModel { Title = "Stretching", DurationMinutes = 2, }
             };
             db.Tasks.AddRange(tasks);
 

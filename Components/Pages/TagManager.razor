@@ -1,0 +1,62 @@
+﻿@page "/tags"
+@using ProductivityQuestManager.Data;
+@inject TaskManagerService TaskService
+
+<h2>Manage Tags</h2>
+
+<div class="mb-4">
+    <input @bind="newName" placeholder="New tag…" />
+    <button @onclick="AddTag">Add</button>
+</div>
+
+<ul class="tag-list">
+    @foreach (var t in tags)
+    {
+        <li class="flex items-center space-x-2">
+            @if (editingId == t.Id)
+            {
+                <input @bind="editName" />
+                <button @onclick="() => SaveRename(t.Id)">💾</button>
+                <button @onclick="CancelRename">✖️</button>
+            }
+            else
+            {
+				<span class="tag-name">@t.Name</span>
+                <button @onclick="() => BeginRename(t)">✏️</button>
+                <button @onclick="() => DeleteTag(t.Id)">🗑️</button>
+            }
+        </li>
+    }
+</ul>
+
+@code {
+    List<Tag> tags;
+    int? editingId;
+    string newName, editName;
+
+    protected override void OnInitialized()
+    {
+        TaskService.OnChange += Refresh;
+        Refresh();
+    }
+    void Refresh() => tags = TaskService.GetAllTags();
+
+    void AddTag()
+    {
+        TaskService.CreateTag(newName);
+        newName = "";
+    }
+    void BeginRename(Tag t) { editingId = t.Id; editName = t.Name; }
+    void CancelRename() { editingId = null; }
+    void SaveRename(int id)
+    {
+        TaskService.RenameTag(id, editName);
+        editingId = null;
+    }
+    void DeleteTag(int id)
+    {
+        TaskService.DeleteTag(id);
+        Refresh();
+    }
+  
+}

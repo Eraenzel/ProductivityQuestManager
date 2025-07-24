@@ -86,7 +86,10 @@ public class TaskManagerService : IDisposable
 
     public void LoadState()
     {
-        Tasks = _db.Tasks.ToList();
+        Tasks = _db.Tasks
+            .Include(t => t.TaskTags)
+            .ThenInclude(tt => tt.Tag)
+            .ToList();
         ActiveTask = Tasks.FirstOrDefault(t => t.IsRunning);
         ActiveUnit = _db.Units.FirstOrDefault(u => u.IsActive);
         CleanupExpiredTask();
@@ -96,12 +99,6 @@ public class TaskManagerService : IDisposable
 
     public List<Unit> GetUnits() => _db.Units.ToList();
 
-    public bool IsCoolingDown(TaskModel task)
-    {
-        if (!task.IsRepeatable || task.LastCompletedAt == null) return false;
-        return DateTime.UtcNow < task.LastCompletedAt.Value.AddMinutes(task.CooldownMinutes);
-    }
-
     public string GetTimeRemaining(TaskModel task)
     {
         if (task.StartedAt == null) return "unknown";
@@ -110,48 +107,90 @@ public class TaskManagerService : IDisposable
         return remaining <= TimeSpan.Zero ? "Done" : $"{remaining.Minutes} min {remaining.Seconds} sec";
     }
 
-    public async Task StartTaskAsync(TaskModel task, int unitId)
+    public async Task StartTaskAsync(TaskModel task, IEnumerable<string> tagNames, TaskType type)
     {
-        if (IsCoolingDown(task) || ActiveTask != null) return;
+        if (ActiveTask != null) return;
 
-        var unit = _db.Units.FirstOrDefault(u => u.Id == unitId);
-        if (unit == null) return;
+        //AssignTagsToTask(task.Id, tagNames);
 
         task.IsRunning = true;
         task.StartedAt = DateTime.UtcNow;
+        task.Type = type;
         ActiveTask = task;
         _db.Update(task);
+        await _db.SaveChangesAsync();
+        LoadState();        // repopulates Tasks, including TaskTags via your Include
+        NotifyStateChanged();
 
-        var quest = new Quest
+        if (task.Type == TaskType.Timer)
         {
-            Name = $"Quest for {task.Title}",
-            DurationMinutes = task.DurationMinutes,
-            StartedAt = DateTime.UtcNow
-        };
+            // wait out the duration
+            await Task.Delay(task.DurationMinutes * 60 * 1000);
+            await CompleteTaskAsync(task);
+        }
+        // else: Tracker mode waits for explicit StopTaskAsync
+    }
+    public async Task StopTaskAsync()
+    {
+        if (ActiveTask == null) return;
+
+        if (ActiveTask.Type == TaskType.Tracker)
+            await CompleteTaskAsync(ActiveTask);
+        else  // Timer
+            await CancelTimerTask(ActiveTask);
+    }
+    private async Task CancelTimerTask(TaskModel task)
+    {
+        // reuse your existing “cancel” flow
+        await CancelActiveTask();  // or inline its logic here
+    }
+    private async Task CompleteTaskAsync(TaskModel task)
+    {
+        var unit = _db.Units.FirstOrDefault(u => u.Id == ActiveUnit!.Id);
+        if (unit == null) return;
+
+        if (!task.StartedAt.HasValue)
+            throw new InvalidOperationException($"Cannot complete task {task.Id} because it never started.");
+
+        // finalize
+        var started = task.StartedAt.Value;
+        task.IsRunning = false;
+        task.LastCompletedAt = DateTime.UtcNow;
+        _db.Update(task);
+
+        // spawn Quest & result
+        var quest = new Quest { Name = task.Title, DurationMinutes = task.DurationMinutes, StartedAt = started };
         _db.Quests.Add(quest);
         await _db.SaveChangesAsync();
 
-        await Task.Delay(task.DurationMinutes * 60 * 1000); // Simulate duration (1 sec = 1 min for test) 
-
-        task.IsRunning = false;
-        task.StartedAt = null;
-        task.LastCompletedAt = DateTime.UtcNow;
-        if (!task.IsRepeatable) task.IsCompleted = true;
-        _db.Update(task);
+        // 3) Compute reward based on type
+        int xp, lootTier;
+        string lootItem, summary;
+        if (task.Type == TaskType.Timer)
+        {
+            xp = 10 + _rng.Next(10);
+            lootTier = 1;
+            lootItem = "Basic Loot Chest";
+            summary = $"Timer '{task.Title}' completed automatically.";
+        }
+        else  // Tracker
+        {
+            xp = 5 + _rng.Next(5);
+            lootTier = 0;
+            lootItem = "Tracker Reward Bag";
+            summary = $"Tracker '{task.Title}' stopped manually.";
+        }
 
         var result = new QuestResult
         {
             QuestId = quest.Id,
-            UnitId = unit.Id,
+            UnitId = ActiveUnit!.Id,
             WasSuccessful = true,
             CompletedAt = DateTime.UtcNow,
-            OutcomeSummary = $"Task '{task.Title}' completed on time by {unit.Name}.",
-            ExperienceGained = 10 + _rng.Next(10),
-            Loot = "Basic Loot Chest"
+            OutcomeSummary = summary,
+            ExperienceGained = xp,
+            Loot = lootItem
         };
-
-        _db.QuestResults.Add(result);
-        LastResult = result;
 
         unit.Experience += result.ExperienceGained;
         if (unit.Experience >= unit.ExperienceToNextLevel)
@@ -161,25 +200,28 @@ public class TaskManagerService : IDisposable
             unit.ExperienceToNextLevel += 50;
         }
         _db.Update(unit);
+        LastResult = result;
+        _db.QuestResults.Add(result);
+        await _db.SaveChangesAsync();
 
         ActiveTask = null;
-        await _db.SaveChangesAsync();
-        LoadState();
         NotifyStateChanged();
+
+
     }
 
-    public void AddTask(string title, int duration, bool isRepeatable)
+    public void AddTask(string title, int duration, IEnumerable<string> tagNames)
     {
         var task = new TaskModel
         {
             Title = title,
-            DurationMinutes = duration,
-            IsRepeatable = isRepeatable,
-            IsCompleted = false,
-            CreatedAt = DateTime.UtcNow
+            DurationMinutes = duration
         };
         _db.Tasks.Add(task);
         _db.SaveChanges();
+
+        AssignTagsToTask(task.Id, tagNames);
+
         LoadState();
         NotifyStateChanged();
     }
@@ -193,21 +235,13 @@ public class TaskManagerService : IDisposable
         NotifyStateChanged();
     }
 
-    public void CancelCooldown(TaskModel task)
+    public async Task Debug_ForceCompleteActiveTask()
     {
-        task.LastCompletedAt = null;
-        _db.Update(task);
-        _db.SaveChanges();
-        LoadState();
-        NotifyStateChanged();
-    }
-
-    public async Task ForceCompleteActiveTask()
-    {
-        if (ActiveTask == null || ActiveUnit == null) return;
+        if (ActiveTask == null || ActiveUnit == null || ActiveTask.Type == TaskType.Tracker) return;
 
         var unit = ActiveUnit;
         var task = ActiveTask;
+
         var quest = new Quest
         {
             Name = $"Quest for {task.Title}",
@@ -220,7 +254,6 @@ public class TaskManagerService : IDisposable
         task.IsRunning = false;
         task.StartedAt = null;
         task.LastCompletedAt = DateTime.UtcNow;
-        if (!task.IsRepeatable) task.IsCompleted = true;
         _db.Update(task);
 
         var result = new QuestResult
@@ -403,75 +436,61 @@ public class TaskManagerService : IDisposable
         NotifyStateChanged();
     }
 
-    // Start a new time entry
-    public void StartTimer(string? description = null, int? taskId = null)
-    {
-        // if there’s already a live timer, ignore or stop it first
-        if (ActiveTimer != null && ActiveTimer.StoppedAt == null) return;
-
-        var entry = new TimeEntry
-        {
-            TaskId = taskId,
-            Description = description ?? string.Empty,
-            StartedAt = DateTime.UtcNow
-        };
-        _db.TimeEntries.Add(entry);
-        _db.SaveChanges();
-        ActiveTimer = entry;
-        NotifyStateChanged();
-    }
-
-    // Stop the running timer
-    public void StopTimer()
-    {
-        if (ActiveTimer == null || ActiveTimer.StoppedAt != null) return;
-
-        ActiveTimer.StoppedAt = DateTime.UtcNow;
-        _db.Update(ActiveTimer);
-        _db.SaveChanges();
-        NotifyStateChanged();
-    }
-
     // Edit an existing entry (in case you forgot to start/stop)
     public void UpdateEntry(int id, string description, DateTime start, DateTime? stop)
     {
-        var entry = _db.TimeEntries.Find(id);
+        var entry = _db.Tasks.Find(id);
         if (entry == null) return;
-        entry.Description = description;
+        entry.Title = description;
         entry.StartedAt = start;
-        entry.StoppedAt = stop;
+        entry.LastCompletedAt = stop;
         _db.Update(entry);
         _db.SaveChanges();
         LoadState();
         NotifyStateChanged();
     }
 
-    // Pull recent entries for display
-    public List<TimeEntry> GetRecentEntries(int count = 10)
+    public void UpdateTask(int taskId, string title, int duration, IEnumerable<string> tagNames)
     {
-        return _db.TimeEntries
-                .Include(e => e.Task)
-                .Include(e => e.TimeEntryTags)
-                .ThenInclude(tet => tet.Tag)
-                .OrderByDescending(e => e.StartedAt)
+        var task = _db.Tasks.Find(taskId);
+        if (task == null) return;
+        task.Title = title;
+        task.DurationMinutes = duration;
+        _db.Update(task);
+        _db.SaveChanges();
+
+        AssignTagsToTask(taskId, tagNames);
+
+        LoadState();
+        NotifyStateChanged();
+    }
+
+    // Pull recent entries for display
+    public List<TaskModel> GetRecentEntries(int count = 10)
+    {
+        return _db.Tasks                
+                .Include(t => t.TaskTags)
+                .ThenInclude(tt => tt.Tag)
+                .OrderByDescending(t => t.StartedAt)
                 .Take(count)
                 .ToList();
     }
 
     public TimeSpan GetActiveTimerElapsed()
     {
-        if (ActiveTimer == null)
+        if (ActiveTask == null || !ActiveTask.StartedAt.HasValue)
             return TimeSpan.Zero;
 
-        // not stopped yet, so measure against Now
-        var end = ActiveTimer.StoppedAt ?? DateTime.UtcNow;
-        return end - ActiveTimer.StartedAt;
+        return DateTime.UtcNow - ActiveTask.StartedAt.Value;
     }
 
-    public TimeEntry? ActiveTimer { get; private set; }
+    public TaskModel? ActiveTimer { get; private set; }
 
     public List<Tag> GetAllTags() =>
-    _db.Tags.OrderBy(t => t.Name).ToList();
+    _db.Tags
+      .Include(t => t.TaskTags)
+      .OrderBy(t => t.Name)
+      .ToList();
 
     public void AddTagIfNotExists(string name)
     {
@@ -480,32 +499,66 @@ public class TaskManagerService : IDisposable
         _db.SaveChanges();
     }
 
-    public void AssignTags(int entryId, IEnumerable<string> tagNames)
+    public void AssignTagsToTask(int taskId, IEnumerable<string> tagNames)
     {
-        var entry = _db.TimeEntries
-            .Include(te => te.TimeEntryTags)
-            .FirstOrDefault(te => te.Id == entryId);
-        if (entry == null) return;
-
-        // ensure tags exist
+        // 2a) ensure tags exist
         foreach (var name in tagNames)
             AddTagIfNotExists(name);
 
-        // clear existing
-        entry.TimeEntryTags.Clear();
+        // 2b) load the task and its join-rows
+        var task = _db.Tasks
+                      .Include(t => t.TaskTags)
+                          .ThenInclude(tt => tt.Tag)
+                      .FirstOrDefault(t => t.Id == taskId);
+        if (task == null) return;
 
-        // re-fetch tags & assign
+        // 2c) clear old
+        task.TaskTags.Clear();
+
+        // 2d) re-assign
         var tags = _db.Tags.Where(t => tagNames.Contains(t.Name)).ToList();
         foreach (var tag in tags)
-            entry.TimeEntryTags.Add(new TimeEntryTag
+        {
+            task.TaskTags.Add(new TaskTag
             {
-                TimeEntry = entry,
+                TaskModelId = task.Id,
+                TagId = tag.Id,
+                TaskModel = task,
                 Tag = tag
             });
+        }
 
-        _db.Update(entry);
         _db.SaveChanges();
-        LoadState();
+        NotifyStateChanged();
+    }
+
+    public void CreateTag(string name)
+    {
+        if (_db.Tags.Any(t => t.Name == name)) return;
+        _db.Tags.Add(new Tag { Name = name });
+        _db.SaveChanges();
+        NotifyStateChanged();
+    }
+
+    public void RenameTag(int id, string newName)
+    {
+        var tag = _db.Tags.Find(id);
+        if (tag == null) return;
+        tag.Name = newName;
+        _db.SaveChanges();
+        NotifyStateChanged();
+    }
+
+    public void DeleteTag(int id)
+    {
+        var tag = _db.Tags
+                     .Include(t => t.TaskTags)
+                     .FirstOrDefault(t => t.Id == id);
+        if (tag == null) return;
+        // remove all join entries
+        _db.RemoveRange(tag.TaskTags);
+        _db.Tags.Remove(tag);
+        _db.SaveChanges();
         NotifyStateChanged();
     }
 }

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ProductivityQuestManager.Data;
 
@@ -10,9 +11,11 @@ using ProductivityQuestManager.Data;
 namespace ProductivityQuestManager.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250722132544_refactoredTasks")]
+    partial class refactoredTasks
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.6");
@@ -64,9 +67,6 @@ namespace ProductivityQuestManager.Migrations
                     b.Property<int>("QuestId")
                         .HasColumnType("INTEGER");
 
-                    b.Property<int?>("TaskModelId")
-                        .HasColumnType("INTEGER");
-
                     b.Property<int>("UnitId")
                         .HasColumnType("INTEGER");
 
@@ -76,8 +76,6 @@ namespace ProductivityQuestManager.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("QuestId");
-
-                    b.HasIndex("TaskModelId");
 
                     b.HasIndex("UnitId");
 
@@ -106,6 +104,9 @@ namespace ProductivityQuestManager.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("DurationMinutes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsCompleted")
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("IsRunning")
@@ -197,11 +198,6 @@ namespace ProductivityQuestManager.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ProductivityQuestManager.Data.TaskModel", "TaskModel")
-                        .WithMany("QuestResults")
-                        .HasForeignKey("TaskModelId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("ProductivityQuestManager.Data.Unit", "Unit")
                         .WithMany("QuestResults")
                         .HasForeignKey("UnitId")
@@ -210,15 +206,13 @@ namespace ProductivityQuestManager.Migrations
 
                     b.Navigation("Quest");
 
-                    b.Navigation("TaskModel");
-
                     b.Navigation("Unit");
                 });
 
             modelBuilder.Entity("ProductivityQuestManager.Data.TaskTag", b =>
                 {
                     b.HasOne("ProductivityQuestManager.Data.Tag", "Tag")
-                        .WithMany("TaskTags")
+                        .WithMany("TaskModelTags")
                         .HasForeignKey("TagId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -241,13 +235,11 @@ namespace ProductivityQuestManager.Migrations
 
             modelBuilder.Entity("ProductivityQuestManager.Data.Tag", b =>
                 {
-                    b.Navigation("TaskTags");
+                    b.Navigation("TaskModelTags");
                 });
 
             modelBuilder.Entity("ProductivityQuestManager.Data.TaskModel", b =>
                 {
-                    b.Navigation("QuestResults");
-
                     b.Navigation("TaskTags");
                 });
 

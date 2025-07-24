@@ -2,7 +2,7 @@
 {
     public class Quest
     {
-        public int Id { get; set; }  // ✅ Primary key
+        public int Id { get; set; }  
         public string Name { get; set; }
         public DateTime StartedAt { get; set; }
         public int DurationMinutes { get; set; }

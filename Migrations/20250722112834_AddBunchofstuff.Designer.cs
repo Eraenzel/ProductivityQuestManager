@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ProductivityQuestManager.Data;
 
@@ -10,9 +11,11 @@ using ProductivityQuestManager.Data;
 namespace ProductivityQuestManager.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250722112834_AddBunchofstuff")]
+    partial class AddBunchofstuff
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.6");
@@ -64,9 +67,6 @@ namespace ProductivityQuestManager.Migrations
                     b.Property<int>("QuestId")
                         .HasColumnType("INTEGER");
 
-                    b.Property<int?>("TaskModelId")
-                        .HasColumnType("INTEGER");
-
                     b.Property<int>("UnitId")
                         .HasColumnType("INTEGER");
 
@@ -76,8 +76,6 @@ namespace ProductivityQuestManager.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("QuestId");
-
-                    b.HasIndex("TaskModelId");
 
                     b.HasIndex("UnitId");
 
@@ -105,7 +103,22 @@ namespace ProductivityQuestManager.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("CooldownMinutes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("DurationMinutes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsCompleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsCoolingDown")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsRepeatable")
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("IsRunning")
@@ -129,7 +142,7 @@ namespace ProductivityQuestManager.Migrations
                     b.ToTable("Tasks");
                 });
 
-            modelBuilder.Entity("ProductivityQuestManager.Data.TaskTag", b =>
+            modelBuilder.Entity("ProductivityQuestManager.Data.TaskModelTag", b =>
                 {
                     b.Property<int>("TaskModelId")
                         .HasColumnType("INTEGER");
@@ -141,7 +154,51 @@ namespace ProductivityQuestManager.Migrations
 
                     b.HasIndex("TagId");
 
-                    b.ToTable("TaskTags");
+                    b.ToTable("TaskModelTags");
+                });
+
+            modelBuilder.Entity("ProductivityQuestManager.Data.TimeEntry", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("StoppedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("TaskId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TaskId");
+
+                    b.ToTable("TimeEntries");
+                });
+
+            modelBuilder.Entity("ProductivityQuestManager.Data.TimeEntryTag", b =>
+                {
+                    b.Property<int>("TimeEntryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TagId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("TimeEntryId", "TagId");
+
+                    b.HasIndex("TagId");
+
+                    b.ToTable("TimeEntryTags");
                 });
 
             modelBuilder.Entity("ProductivityQuestManager.Data.Unit", b =>
@@ -197,11 +254,6 @@ namespace ProductivityQuestManager.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ProductivityQuestManager.Data.TaskModel", "TaskModel")
-                        .WithMany("QuestResults")
-                        .HasForeignKey("TaskModelId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("ProductivityQuestManager.Data.Unit", "Unit")
                         .WithMany("QuestResults")
                         .HasForeignKey("UnitId")
@@ -210,21 +262,19 @@ namespace ProductivityQuestManager.Migrations
 
                     b.Navigation("Quest");
 
-                    b.Navigation("TaskModel");
-
                     b.Navigation("Unit");
                 });
 
-            modelBuilder.Entity("ProductivityQuestManager.Data.TaskTag", b =>
+            modelBuilder.Entity("ProductivityQuestManager.Data.TaskModelTag", b =>
                 {
                     b.HasOne("ProductivityQuestManager.Data.Tag", "Tag")
-                        .WithMany("TaskTags")
+                        .WithMany("TaskModelTags")
                         .HasForeignKey("TagId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("ProductivityQuestManager.Data.TaskModel", "TaskModel")
-                        .WithMany("TaskTags")
+                        .WithMany("TaskModelTags")
                         .HasForeignKey("TaskModelId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -234,6 +284,34 @@ namespace ProductivityQuestManager.Migrations
                     b.Navigation("TaskModel");
                 });
 
+            modelBuilder.Entity("ProductivityQuestManager.Data.TimeEntry", b =>
+                {
+                    b.HasOne("ProductivityQuestManager.Data.TaskModel", "Task")
+                        .WithMany()
+                        .HasForeignKey("TaskId");
+
+                    b.Navigation("Task");
+                });
+
+            modelBuilder.Entity("ProductivityQuestManager.Data.TimeEntryTag", b =>
+                {
+                    b.HasOne("ProductivityQuestManager.Data.Tag", "Tag")
+                        .WithMany("TimeEntryTags")
+                        .HasForeignKey("TagId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ProductivityQuestManager.Data.TimeEntry", "TimeEntry")
+                        .WithMany("TimeEntryTags")
+                        .HasForeignKey("TimeEntryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tag");
+
+                    b.Navigation("TimeEntry");
+                });
+
             modelBuilder.Entity("ProductivityQuestManager.Data.Quest", b =>
                 {
                     b.Navigation("Results");
@@ -241,14 +319,19 @@ namespace ProductivityQuestManager.Migrations
 
             modelBuilder.Entity("ProductivityQuestManager.Data.Tag", b =>
                 {
-                    b.Navigation("TaskTags");
+                    b.Navigation("TaskModelTags");
+
+                    b.Navigation("TimeEntryTags");
                 });
 
             modelBuilder.Entity("ProductivityQuestManager.Data.TaskModel", b =>
                 {
-                    b.Navigation("QuestResults");
+                    b.Navigation("TaskModelTags");
+                });
 
-                    b.Navigation("TaskTags");
+            modelBuilder.Entity("ProductivityQuestManager.Data.TimeEntry", b =>
+                {
+                    b.Navigation("TimeEntryTags");
                 });
 
             modelBuilder.Entity("ProductivityQuestManager.Data.Unit", b =>

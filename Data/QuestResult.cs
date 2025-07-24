@@ -12,6 +12,9 @@
         public int UnitId { get; set; }
         public Unit Unit { get; set; }
 
+        public int? TaskModelId { get; set; }
+        public TaskModel? TaskModel { get; set; } 
+
         // Outcome data
         public bool WasSuccessful { get; set; }
         public string OutcomeSummary { get; set; }  // e.g. "Completed in 43 mins", or "Failed: timer interrupted"

@@ -5,7 +5,7 @@
         public int Id { get; set; }  // Primary key
 
         // Basic info
-        public string Name { get; set; }
+        public string Name { get; set; } = "";
         public UnitClass Class { get; set; }  // e.g. Warrior, Mage, Rogue
         public bool IsActive { get; set; } = false;
 

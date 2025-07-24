@@ -4,9 +4,9 @@ using ProductivityQuestManager.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-    // Add services to the container.
-    builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+// Add services to the container.
+builder.Services.AddRazorComponents()
+    .AddInteractiveServerComponents();    
 
 // This creates a local SQLite file
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -27,6 +27,14 @@ if (!app.Environment.IsDevelopment())
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    /*var path = Path.Combine(
+    app.Environment.ContentRootPath,
+    "app.db");
+
+    if (File.Exists(path))
+        File.Delete(path);*/
+
     db.Database.Migrate(); // Ensure DB is up-to-date
     DbInitializer.Seed(db, false); // Seed mock data
 }
@@ -35,6 +43,7 @@ app.UseHttpsRedirection();
 
 app.UseStaticFiles();
 app.UseAntiforgery();
+//app.UseRouting();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
