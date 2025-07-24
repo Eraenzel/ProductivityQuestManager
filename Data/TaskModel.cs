@@ -31,11 +31,15 @@
 
     public class CompletedTaskDTO
     {
-        public DateTime CompletedAt { get; set; }
+        public int TaskId { get; set; }
         public string Title { get; set; } = "";
         public TaskType Type { get; set; }
-        public TimeSpan Duration { get; set; }
+        public TimeSpan Duration { get; set; }           // actual elapsed
+        public bool WasCancelled { get; set; }
+        public DateTime CompletedAt { get; set; }        // or CancelledAt
         public List<string> Tags { get; set; } = new();
         public int ExperienceGained { get; set; }
+        public string? Loot { get; set; }
+        public string UnitName { get; set; } = "";
     }
 }

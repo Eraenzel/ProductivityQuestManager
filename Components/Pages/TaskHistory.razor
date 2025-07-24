@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @using ProductivityQuestManager.Data
 @using Microsoft.EntityFrameworkCore;
+@inject TaskManagerService TaskService
 @inject AppDbContext Db
 
 <h2 class="text-xl font-bold mb-4">🕘 Task History</h2>
@@ -15,8 +16,6 @@
     }
     else
     {
-        <!-- Debug counter -->
-        //<p class="text-xs text-gray-400">Days generated: @CalendarDays.Count</p>
         <!-- Calendar table -->
         <table class="w-full table-fixed text-xs text-center border-collapse mb-2">
             <thead>
@@ -72,77 +71,87 @@
 </div>
 
 <h3 class="text-xl font-bold mb-4">🕘 Task History</h3>
-@if (questResults == null)
-{
-    <p>Loading...</p>
-}
-else if (!questResults.Any())
-{
-    <p>No completed tasks yet.</p>
-}
-else
-{
-    var displayCount = showAll ? questResults.Count : Math.Min(5, questResults.Count);
-    <ul class="space-y-3">
-        @foreach (var result in questResults.Take(displayCount))
-        {
-            <li class="border p-3 rounded bg-white shadow">
-                <strong>@result.Quest?.Name</strong><br />
-                Unit: @result.Unit?.Name<br />
-                XP: @result.ExperienceGained<br />
-                Completed: @result.CompletedAt.ToLocalTime().ToString("g")<br />
-                Outcome: @result.OutcomeSummary
-            </li>
-        }
-    </ul>
-    @if (questResults.Count > 5)
-    {
-        <button class="mt-4 px-4 py-2 bg-blue-500 text-white rounded" @onclick="ToggleShowAll">
-            @(showAll ? "Show Less" : "Show All")
-        </button>
-    }
-}
-@if (history != null)
-{
-<ul>
-    @foreach (var item in history.Take(showAll ? history.Count : 5))
-    {
-        <li>
-            <strong>@item.Title</strong> (@item.Type) —
-            @item.Duration.ToString(@"hh\:mm\:ss") —
-            XP: @item.ExperienceGained —
-            Tags: @string.Join(", ", item.Tags)
-        </li>
-    }
-</ul>
-@if (history.Count > 5)
-{
-    <button @onclick="ToggleShowAll">@((showAll) ? "Show Less" : "Show All")</button>
-}
-}
+<div class="flex space-x-4 mb-4">
+    <label>
+        From:
+        <InputDate @bind-Value="from" class="border p-1 rounded" />
+    </label>
+    <label>
+        To:
+        <InputDate @bind-Value="to" class="border p-1 rounded" />
+    </label>
+    <button class="px-3 py-1 bg-blue-600 text-white rounded" @onclick="Load">
+        Refresh
+    </button>
+</div>
+
+<div class="grid grid-cols-2 gap-4">
+  <table>
+    <thead><tr><th>Date</th><th>Title</th><th>Type</th><th>Duration</th><th>Tags</th></tr></thead>
+    <tbody>
+      @foreach(var d in history)
+      {
+        <tr class="@((d.WasCancelled?"opacity-50":""))">
+          <td>@d.CompletedAt.ToLocalTime().ToString("g")</td>
+          <td><bold>@d.Title</bold></td>
+          <td>@d.Type</td>
+          <td>@d.Duration.ToString(@"hh\:mm\:ss")</td>
+          <td>@string.Join(", ", d.Tags)</td>
+        </tr>
+      }    
+    </tbody>
+  </table>
+
+  <table>
+    <thead><tr><th>Date</th><th>Unit</th><th>XP</th><th>Loot</th><th>Result</th></tr></thead>
+    <tbody>
+      @foreach(var d in history)
+      {
+        <tr>
+          <td>@d.CompletedAt.ToLocalTime().ToString("g")</td>
+          <td>@d.UnitName</td>
+          <td>@d.ExperienceGained</td>
+          <td>@d.Loot</td>
+          <td>@(d.WasCancelled? "❌ Cancel" : "✅")</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>
+
 @code {
     private List<QuestResult>? questResults;
     private bool showAll = false;
     private List<CalendarDay> CalendarDays = new();
     private List<List<CalendarDay>> Weeks = new();
 
-    List<CompletedTaskDTO> history;
+    List<CompletedTaskDTO> history = new();
+    DateTime from = DateTime.Today.AddDays(-30), to = DateTime.Today;
+    TaskType? filterType = null;
+    bool includeCancelled = false;
     DateTime filterStart, filterEnd;
-    TaskType? filterType;
     List<string> filterTags = new();
 
     protected override void OnInitialized()
     {
-        /*questResults = Db.QuestResults
-            .Include(q => q.Unit)
-            .Include(q => q.Quest)
-            .OrderByDescending(q => q.CompletedAt)
-            .ToList();*/
-
-        BuildCalendar();
         filterEnd = DateTime.Today.AddDays(1).AddTicks(-1);
         filterStart = filterEnd.AddDays(-30);
+        BuildCalendar();
         LoadHistory();
+    }
+
+    void Load()
+    {
+        var startOfDay = from.Date;
+        // end‐of‐day: 23:59:59.999
+        var endOfDay = to.Date.AddDays(1).AddTicks(-1);
+
+        history = TaskService.GetHistory(
+            startOfDay,
+            endOfDay,
+            filterType,
+            filterTags,
+            includeCancelled);
     }
 
     private void ToggleShowAll() => showAll = !showAll;
@@ -155,6 +164,11 @@ else
           .Where(t => t.LastCompletedAt != null
                    && t.LastCompletedAt >= filterStart
                    && t.LastCompletedAt <= filterEnd);
+        var quest = Db.QuestResults
+            .Include(r => r.Quest)
+            .Include(r => r.Unit)
+            .OrderByDescending(r => r.CompletedAt)
+            .ToList();
 
         if (filterType.HasValue)
             query = query.Where(t => t.Type == filterType);
@@ -176,7 +190,7 @@ else
               ExperienceGained = t.QuestResults
                                 .OrderByDescending(r => r.CompletedAt)
                                 .Select(r => r.ExperienceGained)
-                                .FirstOrDefault()
+                                .FirstOrDefault()             
           })
           .ToList();
     }

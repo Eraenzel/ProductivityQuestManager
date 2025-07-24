@@ -561,4 +561,54 @@ public class TaskManagerService : IDisposable
         _db.SaveChanges();
         NotifyStateChanged();
     }
+
+    public List<CompletedTaskDTO> GetHistory(
+    DateTime from, DateTime to,
+    TaskType? filterType = null,
+    IEnumerable<string>? filterTags = null,
+    bool includeCancelled = false)
+    {
+        var q = _db.Tasks
+           .Include(t => t.TaskTags).ThenInclude(tt => tt.Tag)
+           .Include(t => t.QuestResults)
+           .Where(t =>
+               t.StartedAt != null &&
+               (t.LastCompletedAt ?? t.StartedAt.Value) >= from.Date &&
+               (t.LastCompletedAt ?? t.StartedAt.Value) <= to.Date.AddDays(1) &&
+               (includeCancelled || !t.IsRunning && t.LastCompletedAt != null)
+            );
+
+        if (filterType.HasValue)
+            q = q.Where(t => t.Type == filterType.Value);
+        if (filterTags?.Any() == true)
+            q = q.Where(t => t.TaskTags.Any(tt => filterTags.Contains(tt.Tag.Name)));
+
+        return q
+          .Select(t => new CompletedTaskDTO
+          {
+              TaskId = t.Id,
+              Title = t.Title,
+              Type = t.Type,
+              WasCancelled = t.LastCompletedAt == null,
+              CompletedAt = t.LastCompletedAt ?? DateTime.UtcNow,  // or a CancelledAt
+              Duration = t.Type == TaskType.Timer
+                         ? TimeSpan.FromMinutes(t.DurationMinutes)
+                         : (t.LastCompletedAt!.Value - t.StartedAt!.Value),
+              Tags = t.TaskTags.Select(tt => tt.Tag.Name).ToList(),
+              ExperienceGained = t.QuestResults
+                                .OrderByDescending(r => r.CompletedAt)
+                                .Select(r => r.ExperienceGained)
+                                .FirstOrDefault(),
+              Loot = t.QuestResults
+                     .OrderByDescending(r => r.CompletedAt)
+                     .Select(r => r.Loot)
+                     .FirstOrDefault(),
+              UnitName = t.QuestResults
+                         .OrderByDescending(r => r.CompletedAt)
+                         .Select(r => r.Unit!.Name)
+                         .FirstOrDefault() ?? ""
+          })
+          .OrderByDescending(d => d.CompletedAt)
+          .ToList();
+    }
 }
