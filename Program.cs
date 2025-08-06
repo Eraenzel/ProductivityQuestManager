@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using ProductivityQuestManager.Components;
 using ProductivityQuestManager.Data;
+using ProductivityQuestManager.Service;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,6 +14,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite("Data Source=app.db"));
 
 builder.Services.AddScoped<TaskManagerService>();
+builder.Services.AddScoped<IQuestRewardService, QuestRewardService>();
 
 var app = builder.Build();
 

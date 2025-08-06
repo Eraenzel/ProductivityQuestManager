@@ -1,76 +1,112 @@
 ﻿@page "/units"
 @rendermode InteractiveServer
 @using ProductivityQuestManager.Data
+
+@inject AppDbContext Db
 @inject TaskManagerService TaskService
 @inject IJSRuntime JS
 @implements IDisposable
 
 <h2 class="text-xl font-bold mb-4">Your Units</h2>
 
-<h3 class="font-semibold">🎯 Active Unit</h3>
-@if (TaskService.ActiveUnit != null)
+@if (isModalVisible && selectedUnit != null)
 {
-    <div class="mb-4 p-2 border rounded bg-gray-100">
-        <strong>@TaskService.ActiveUnit.Name</strong> (Lv @TaskService.ActiveUnit.Level)
+    <div class="bg-white rounded shadow-lg w-80 p-4 mx-auto mt-10">
+        <h5 class="text-lg font-bold mb-2">Level Up @selectedUnit.Name!</h5>
+        <p class="mb-4">Choose one stat to increase:</p>
+        <div class="flex justify-between">
+            <button class="px-3 py-1 bg-secondary rounded" @onclick="() => AllocateStat(StatType.Attack)">Attack +1</button>
+            <button class="px-3 py-1 bg-secondary rounded" @onclick="() => AllocateStat(StatType.Defense)">Defense +1</button>
+            <button class="px-3 py-1 bg-secondary rounded" @onclick="() => AllocateStat(StatType.Speed)">Speed +1</button>
+        </div>
     </div>
 }
 else
 {
-    <p class="text-sm text-red-500 mb-4">No active unit selected. Please add or set one below.</p>
-}
-
-@if (!units.Any())
-{
-    <p>No units yet.</p>
-}
-else
-{
-    <ul class="space-y-3">
-        @foreach (var unit in units)
-        {
-            <li class="border p-3 rounded bg-white shadow">
-                <NavLink class="block hover:bg-gray-50 p-2 rounded"
-                         href="@($"/unit/{unit.Id}")">
-                    <strong>@unit.Name</strong> (<em>@unit.Class</em>)<br />
-				</NavLink>
-				Level: @unit.Level — XP: @unit.Experience/@unit.ExperienceToNextLevel               
-                <div class="mt-2">
-                    <button class="btn btn-secondary mr-2"
-                                    @onclick="() => SetActive(unit.Id)">
-                    🎯 Set Active
-                    </button>
-                    <button class="btn btn-danger"
-                                    @onclick="() => ConfirmDelete(unit.Id, unit.Name)">
-                    🗑 Release
-                    </button>
+    <h3 class="font-semibold">🎯 Active Unit</h3>
+    @if (TaskService.ActiveUnit != null)
+    {
+        <div class="mb-4 p-2 border rounded bg-gray-100">
+            <strong>@TaskService.ActiveUnit.Name</strong> (Lv @TaskService.ActiveUnit.Level)
+            <div class="mt-1">
+                <span>@TaskService.ActiveUnit.Experience / @TaskService.ActiveUnit.ExperienceToNextLevel XP</span>
+                <div class="progress mt-1">
+                    <div class="progress-bar" role="progressbar"
+                         style="width: @(GetXpPercentage(TaskService.ActiveUnit))%;"
+                         aria-valuenow="@TaskService.ActiveUnit.Experience"
+                         aria-valuemin="0"
+                         aria-valuemax="@TaskService.ActiveUnit.ExperienceToNextLevel">
+                    </div>
                 </div>
-            </li>
-        }
-    </ul>
+            </div>
+        </div>
+    }
+    else
+    {
+        <p class="text-sm text-red-500 mb-4">No active unit selected. Please add or set one below.</p>
+    }
+
+    @if (!units.Any())
+    {
+        <p>No units yet.</p>
+    }
+    else
+    {
+        <ul class="space-y-3">
+            @foreach (var unit in units)
+            {
+                <li class="border p-3 rounded bg-white shadow">
+                    <div class="flex justify-between items-center">
+                        <NavLink class="block hover:bg-gray-50 p-2 rounded flex-grow"
+                                 href="@($"/unit/{unit.Id}")">
+                            <strong>@unit.Name</strong> (<em>@unit.Class</em>)
+                        </NavLink>
+                        <div class="text-sm">
+                            Level: @unit.Level<br />
+                            XP: @unit.Experience/@unit.ExperienceToNextLevel
+                            <div class="progress mt-1" style="height:0.75rem;">
+                                <div class="progress-bar" role="progressbar"
+                                     style="width:@(GetXpPercentage(unit))%;"
+                                     aria-valuenow="@unit.Experience"
+                                     aria-valuemin="0"
+                                     aria-valuemax="@unit.ExperienceToNextLevel">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-2 flex gap-2">
+                        <button class="px-3 py-1 bg-gray-300 rounded" @onclick="() => SetActive(unit.Id)">🎯 Set Active</button>
+                        <button class="px-3 py-1 bg-yellow-400 rounded" @onclick="() => ShowLevelUp(unit)" disabled="@(unit.Experience < unit.ExperienceToNextLevel)">🆙 Level Up</button>
+                        <button class="px-3 py-1 bg-red-500 text-white rounded" @onclick="() => ConfirmDelete(unit.Id, unit.Name)">🗑 Release</button>
+                    </div>
+                </li>
+            }
+        </ul>
+    }
+
+    <h3 class="mt-6 font-semibold text-lg">➕ Add New Unit</h3>
+    <div class="mt-2 space-y-2">
+        <input type="text" placeholder="Unit name" class="border p-2 rounded w-64" @bind="newUnitName" />
+        <select class="border p-2 rounded w-64" @bind="newUnitClass">
+            <option value="">-- Choose Class --</option>
+            @foreach (var cls in Enum.GetValues<UnitClass>())
+            {
+                <option value="@cls">@cls</option>
+            }
+        </select>
+        <button class="px-4 py-1 bg-blue-500 text-white rounded" @onclick="AddUnit">Add Unit</button>
+    </div>
+
+    <h3 class="mt-6 font-semibold text-lg">🎲 Generate Random Unit</h3>
+    <button class="px-4 py-1 bg-purple-500 text-white rounded" @onclick="GenerateRandom">Generate & Add Random Unit</button>
 }
-
-<h3 class="mt-6 font-semibold text-lg">➕ Add New Unit</h3>
-<div class="mt-2 space-y-2">
-    <input type="text" placeholder="Unit name" class="border p-2 rounded w-64" @bind="newUnitName" />
-    <select class="border p-2 rounded w-64" @bind="newUnitClass">
-        <option value="">-- Choose Class --</option>
-        @foreach (var cls in Enum.GetValues<UnitClass>())
-        {
-            <option value="@cls">@cls</option>
-        }
-    </select>
-    <button class="px-4 py-1 bg-blue-500 text-white rounded" @onclick="AddUnit">Add Unit</button>
-</div>
-
-<h3 class="mt-6 font-semibold text-lg">🎲 Generate Random Unit</h3>
-<button class="px-4 py-1 bg-purple-500 text-white rounded" @onclick="GenerateRandom">
-    Generate & Add Random Unit
-</button>
 
 @code {
     private List<Unit> units = new();
     private string newUnitName = string.Empty;
     private UnitClass? newUnitClass = null;
+    private Unit? selectedUnit;
+    private bool isModalVisible;
 
     protected override void OnInitialized()
     {
@@ -78,43 +114,80 @@ else
         TaskService.OnChange += Refresh;
     }
 
-    private void AddUnit()
+    private void Refresh()
     {
-        if (string.IsNullOrWhiteSpace(newUnitName) || newUnitClass == null)
-            return;
+        units = TaskService.GetUnits();
+        InvokeAsync(StateHasChanged);
+    }
 
+    decimal GetXpPercentage(Unit u) =>
+        u.ExperienceToNextLevel == 0 ? 0 : Math.Min(100, (decimal)u.Experience / u.ExperienceToNextLevel * 100);
+
+    private async Task AddUnit()
+    {
+        if (string.IsNullOrWhiteSpace(newUnitName) || newUnitClass == null) return;
         TaskService.AddUnit(newUnitName, newUnitClass.Value);
         newUnitName = string.Empty;
         newUnitClass = null;
-        units = TaskService.GetUnits();
+        Refresh();
     }
 
-    private void SetActive(int id)
+    private async Task SetActive(int id)
     {
         TaskService.SetActiveUnit(id);
-        InvokeAsync(StateHasChanged);
+        Refresh();
     }
 
     private async Task ConfirmDelete(int id, string name)
     {
-        bool confirmed = await JS.InvokeAsync<bool>("confirm", $"Are you sure you want to release '{name}'?");
-        if (confirmed)
+        if (await JS.InvokeAsync<bool>("confirm", $"Are you sure you want to release '{name}'?"))
         {
             TaskService.DeleteUnit(id);
-            units = TaskService.GetUnits();
+            Refresh();
         }
     }
 
-    private void GenerateRandom()
+    private async Task GenerateRandom()
     {
         TaskService.AddRandomUnit();
-        units = TaskService.GetUnits();
+        Refresh();
     }
 
-    private void Refresh() => InvokeAsync(StateHasChanged);
-
-    public void Dispose()
+    private void ShowLevelUp(Unit u)
     {
-        TaskService.OnChange -= Refresh;
+        selectedUnit = u;
+        isModalVisible = true;
     }
+
+    private void HideLevelUp()
+    {
+        isModalVisible = false;
+        selectedUnit = null;
+    }
+
+    enum StatType { Attack, Defense, Speed }
+
+    private async Task AllocateStat(StatType stat)
+    {
+        if (selectedUnit == null) return;
+        switch (stat)
+        {
+            case StatType.Attack: selectedUnit.Attack++; break;
+            case StatType.Defense: selectedUnit.Defense++; break;
+            case StatType.Speed: selectedUnit.Speed++; break;
+        }
+        selectedUnit.Level++;
+        selectedUnit.Experience = 0;
+        selectedUnit.ExperienceToNextLevel = CalculateThreshold(selectedUnit.Level);
+
+        Db.Units.Update(selectedUnit);
+        await Db.SaveChangesAsync();
+
+        HideLevelUp();
+        Refresh();
+    }
+
+    private int CalculateThreshold(int level) => 100 + (level - 1) * 50;
+
+    public void Dispose() => TaskService.OnChange -= Refresh;
 }

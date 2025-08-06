@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using ProductivityQuestManager.Data;
+using ProductivityQuestManager.Service;
 using System.Text.Json;
 using System.Timers;
 
@@ -10,6 +11,7 @@ public class TaskManagerService : IDisposable
     private readonly IWebHostEnvironment _env;
     private readonly System.Timers.Timer _timer;
     private readonly Random _rng = new();
+    private readonly IQuestRewardService _rewardService;
 
     private List<string> _firstNames = new();
     private List<string> _surnames = new();
@@ -29,10 +31,11 @@ public class TaskManagerService : IDisposable
     }
 
     public TaskManagerService(AppDbContext db,
-            IWebHostEnvironment env)
+            IWebHostEnvironment env, IQuestRewardService rewardService)
     {
         _db = db;
         _env = env;
+        _rewardService = rewardService;
         LoadNamePool();
         LoadState();        
 
@@ -163,23 +166,17 @@ public class TaskManagerService : IDisposable
         _db.Quests.Add(quest);
         await _db.SaveChangesAsync();
 
-        // 3) Compute reward based on type
-        int xp, lootTier;
-        string lootItem, summary;
-        if (task.Type == TaskType.Timer)
-        {
-            xp = 10 + _rng.Next(10);
-            lootTier = 1;
-            lootItem = "Basic Loot Chest";
-            summary = $"Timer '{task.Title}' completed automatically.";
-        }
-        else  // Tracker
-        {
-            xp = 5 + _rng.Next(5);
-            lootTier = 0;
-            lootItem = "Tracker Reward Bag";
-            summary = $"Tracker '{task.Title}' stopped manually.";
-        }
+        // delegate to reward service
+        // measure actual elapsed minutes (rounding or floor as you prefer)
+        var elapsed = (DateTime.UtcNow - started).TotalMinutes;
+        int minutesRan = Math.Max(1, (int)Math.Round(elapsed));  // at least 1 minute
+
+        //int xp = _rewardService.CalculateExperience(task.Type, minutesRan);
+
+        double elapsedMinutes = (DateTime.UtcNow - started).TotalMinutes;
+        int xp = _rewardService.CalculateExperience(task.Type, (int)elapsedMinutes);
+
+        string lootItem = _rewardService.GenerateLoot(task.Type);
 
         var result = new QuestResult
         {
@@ -187,19 +184,17 @@ public class TaskManagerService : IDisposable
             UnitId = ActiveUnit!.Id,
             WasSuccessful = true,
             CompletedAt = DateTime.UtcNow,
-            OutcomeSummary = summary,
+            OutcomeSummary = task.Type == TaskType.Timer
+                ? $"Timer '{task.Title}' completed automatically."
+                : $"Tracker '{task.Title}' stopped manually.",
             ExperienceGained = xp,
             Loot = lootItem
         };
 
-        unit.Experience += result.ExperienceGained;
-        if (unit.Experience >= unit.ExperienceToNextLevel)
-        {
-            unit.Level++;
-            unit.Experience = 0;
-            unit.ExperienceToNextLevel += 50;
-        }
+        unit.Experience += xp;
+        bool leveled = _rewardService.TryLevelUp(unit);
         _db.Update(unit);
+
         LastResult = result;
         _db.QuestResults.Add(result);
         await _db.SaveChangesAsync();

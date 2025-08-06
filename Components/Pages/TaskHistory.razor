@@ -1,23 +1,23 @@
 ﻿@page "/history"
 @rendermode InteractiveServer
 @using ProductivityQuestManager.Data
-@using Microsoft.EntityFrameworkCore;
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.EntityFrameworkCore
 @inject TaskManagerService TaskService
 @inject AppDbContext Db
 
 <h2 class="text-xl font-bold mb-4">🕘 Task History</h2>
 
-@* Calendar heatmap view for the past 30 days *@
+@* Activity Calendar *@
 <div class="mb-6 p-4 bg-gray-100 rounded">
-    <h3 class="text-lg font-semibold mb-2">📅 Activity Calendar</h3>
+    <h3 class="text-lg font-semibold mb-2">📅 Activity Calendar (Last 30 Days)</h3>
     @if (Weeks == null || !Weeks.Any())
     {
         <p class="text-sm text-gray-500">No calendar data to display.</p>
     }
     else
     {
-        <!-- Calendar table -->
-        <table class="w-full table-fixed text-xs text-center border-collapse mb-2">
+        <table class="w-full table-fixed text-xs text-center border-collapse mb-4">
             <thead>
                 <tr>
                     <th class="p-1">Mon</th>
@@ -36,30 +36,20 @@
                         @foreach (var day in week)
                         {
                             var color = GetColor(day.Count);
-                            var cls = GetIntensity(day.Count);
                             var txtCol = day.Count >= 3 ? "#fff" : "#111";
                             var isToday = day.Date.Date == DateTime.Today;
-                            var borderCol = isToday ? "#2563EB" /* blue-600 */ : "#9CA3AF" /* gray-400 */;
+                            var borderCol = isToday ? "#2563EB" : "#9CA3AF";
                             var borderSize = isToday ? "2px" : "1px";
-
                             <td class="p-1">
-                                <div class="calendar-cell" style="
-                                width:2rem;
-                                height:2rem;
-                                display:flex;
-                                align-items:center;
-                                justify-content:center;
-                                border: @borderSize solid @borderCol;
-                                border-radius:0.5rem;
-                                background-color:@color;
-                                color:@txtCol;
-                                font-size:0.75rem;
-                                font-weight:bold;"
-									 title="@(day.Count < 0 ? "" : $"{day.Date:yyyy-MM-dd}: {day.Count} entries")">
-                                     @if (day.Count >= 0)
-                                     {
-                                         @day.Date.Day
-                                     }                                   
+                                <div class="calendar-cell"
+                                     style="width:2rem;height:2rem;display:flex;align-items:center;justify-content:center;
+                                                        border:@borderSize solid @borderCol;border-radius:0.5rem;background-color:@color;
+                                                        color:@txtCol;font-size:0.75rem;font-weight:bold;"
+                                     title="@(day.Count >= 0 ? $"{day.Date:yyyy-MM-dd}: {day.Count} entries" : "")">
+                                    @if (day.Count >= 0)
+                                    {
+                                        @day.Date.Day
+                                    }
                                 </div>
                             </td>
                         }
@@ -70,127 +60,185 @@
     }
 </div>
 
-<h3 class="text-xl font-bold mb-4">🕘 Task History</h3>
-<div class="flex space-x-4 mb-4">
-    <label>
+@* Filters & Summary *@
+<div class="d-flex flex-wrap gap-3 mb-6">
+    <label class="me-2">
         From:
         <InputDate @bind-Value="from" class="border p-1 rounded" />
     </label>
-    <label>
+    <label class="me-2">
         To:
         <InputDate @bind-Value="to" class="border p-1 rounded" />
     </label>
-    <button class="px-3 py-1 bg-blue-600 text-white rounded" @onclick="Load">
-        Refresh
-    </button>
+    <label class="me-2">
+        Tag:
+        <select @bind="selectedTag" class="border p-1 rounded">
+            <option value="">All</option>
+            @foreach (var tag in allTags)
+            {
+                <option value="@tag">@tag</option>
+            }
+        </select>
+    </label>
+    <label class="me-2">
+        Unit:
+        <select @bind="selectedUnitId" class="border p-1 rounded">
+            <option value="">All</option>
+            @foreach (var u in allUnits)
+            {
+                <option value="@u.Id">@u.Name</option>
+            }
+        </select>
+    </label>
+    <label class="me-2">
+        Result:
+        <select @bind="filterResult" class="border p-1 rounded">
+            <option value="">All</option>
+            <option value="success">Successful</option>
+            <option value="cancelled">Cancelled</option>
+        </select>
+    </label>
+    <button class="px-3 py-1 bg-blue-600 text-white rounded" @onclick="LoadHistory">Apply</button>
 </div>
 
-<div class="grid grid-cols-2 gap-4">
-  <table>
-    <thead><tr><th>Date</th><th>Title</th><th>Type</th><th>Duration</th><th>Tags</th></tr></thead>
-    <tbody>
-      @foreach(var d in history)
-      {
-        <tr class="@((d.WasCancelled?"opacity-50":""))">
-          <td>@d.CompletedAt.ToLocalTime().ToString("g")</td>
-          <td><bold>@d.Title</bold></td>
-          <td>@d.Type</td>
-          <td>@d.Duration.ToString(@"hh\:mm\:ss")</td>
-          <td>@string.Join(", ", d.Tags)</td>
-        </tr>
-      }    
-    </tbody>
-  </table>
+@if (history != null && history.Any())
+{
+    <div class="card-group mb-4">
+        <div class="card text-center me-2">
+            <div class="card-body">
+                <h5 class="card-title">Total Tasks</h5>
+                <p class="card-text">@history.Count()</p>
+            </div>
+        </div>
+        <div class="card text-center me-2">
+            <div class="card-body">
+                <h5 class="card-title">Total XP Earned</h5>
+                <p class="card-text">@history.Sum(h => h.ExperienceGained)</p>
+            </div>
+        </div>
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title">Avg. Duration</h5>
+                <p class="card-text">@TimeSpan.FromMinutes(history.Average(h => h.Duration.TotalMinutes)).ToString(@"hh\:mm")</p>
+            </div>
+        </div>
+    </div>
 
-  <table>
-    <thead><tr><th>Date</th><th>Unit</th><th>XP</th><th>Loot</th><th>Result</th></tr></thead>
-    <tbody>
-      @foreach(var d in history)
-      {
-        <tr>
-          <td>@d.CompletedAt.ToLocalTime().ToString("g")</td>
-          <td>@d.UnitName</td>
-          <td>@d.ExperienceGained</td>
-          <td>@d.Loot</td>
-          <td>@(d.WasCancelled? "❌ Cancel" : "✅")</td>
-        </tr>
-      }
-    </tbody>
-  </table>
-</div>
+    @* Group by date *@
+    @foreach (var group in history.GroupBy(h => h.CompletedAt.Date).OrderByDescending(g => g.Key))
+    {
+        <details open class="mb-4">
+            <summary class="font-semibold text-lg cursor-pointer">
+                @group.Key.ToString("dddd, MMM dd, yyyy") (@group.Count() tasks)
+            </summary>
+            <table class="w-full mt-2 border-collapse">
+                <thead>
+                    <tr class="bg-gray-200">
+                        <th class="p-2">Time</th>
+                        <th class="p-2">Title</th>
+                        <th class="p-2">Unit</th>
+                        <th class="p-2">Type</th>
+                        <th class="p-2">XP</th>
+                        <th class="p-2">Loot</th>
+                        <th class="p-2">Tags</th>
+                    </tr>"
+                </thead>
+                <tbody>
+                    @foreach (var item in group.OrderByDescending(h => h.CompletedAt))
+                    {
+                        <tr class="border-t">
+                            <td class="p-2">@item.CompletedAt.ToLocalTime().ToString("HH:mm")</td>
+                            <td class="p-2">@item.Title</td>
+                            <td class="p-2">@item.UnitName</td>
+                            <td class="p-2">@item.Type</td>
+                            <td class="p-2">@item.ExperienceGained</td>
+                            <td class="p-2">@item.Loot</td>
+                            <td class="p-2">
+                                @foreach (var t in item.Tags)
+                                {
+                                    <span class="inline-block bg-blue-200 text-blue-800 px-2 py-0.5 rounded mr-1 text-xs">@t</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </details>
+    }
+}
+else
+{
+    <p>No history entries found for the selected criteria.</p>
+}
 
 @code {
-    private List<QuestResult>? questResults;
-    private bool showAll = false;
-    private List<CalendarDay> CalendarDays = new();
+    private DateTime from = DateTime.Today.AddDays(-7);
+    private DateTime to = DateTime.Today;
+    private string selectedTag = string.Empty;
+    private int? selectedUnitId = null;
+    private string filterResult = string.Empty;
+    private List<string> allTags = new();
+    private List<Unit> allUnits = new();
+    private List<CompletedTaskDTO> history = new();
     private List<List<CalendarDay>> Weeks = new();
-
-    List<CompletedTaskDTO> history = new();
-    DateTime from = DateTime.Today.AddDays(-30), to = DateTime.Today;
-    TaskType? filterType = null;
-    bool includeCancelled = false;
-    DateTime filterStart, filterEnd;
-    List<string> filterTags = new();
 
     protected override void OnInitialized()
     {
-        filterEnd = DateTime.Today.AddDays(1).AddTicks(-1);
-        filterStart = filterEnd.AddDays(-30);
+        allTags = TaskService.GetAllTags().Select(t => t.Name).ToList();
+        allUnits = TaskService.GetUnits();
         BuildCalendar();
         LoadHistory();
     }
 
-    void Load()
+    private void LoadHistory()
     {
-        var startOfDay = from.Date;
-        // end‐of‐day: 23:59:59.999
-        var endOfDay = to.Date.AddDays(1).AddTicks(-1);
+        var start = from.Date;
+        var end = to.Date.AddDays(1).AddTicks(-1);
 
-        history = TaskService.GetHistory(
-            startOfDay,
-            endOfDay,
-            filterType,
-            filterTags,
-            includeCancelled);
-    }
-
-    private void ToggleShowAll() => showAll = !showAll;
-
-    void LoadHistory()
-    {
-        var query = Db.Tasks
-          .Include(t => t.TaskTags).ThenInclude(tt => tt.Tag)
-          .Include(t => t.QuestResults)         // if you link quests back to tasks
-          .Where(t => t.LastCompletedAt != null
-                   && t.LastCompletedAt >= filterStart
-                   && t.LastCompletedAt <= filterEnd);
-        var quest = Db.QuestResults
+        var resultsQuery = Db.QuestResults
             .Include(r => r.Quest)
             .Include(r => r.Unit)
-            .OrderByDescending(r => r.CompletedAt)
-            .ToList();
+            .Where(r => r.CompletedAt >= start && r.CompletedAt <= end);
 
-        if (filterType.HasValue)
-            query = query.Where(t => t.Type == filterType);
+        if (!string.IsNullOrEmpty(selectedTag))
+        {
+            resultsQuery = resultsQuery
+                .Where(r => Db.Tasks
+                    .Where(t => t.Id == r.QuestId)
+                    .SelectMany(t => t.TaskTags)
+                    .Any(tt => tt.Tag.Name == selectedTag));
+        }
+        if (selectedUnitId.HasValue)
+        {
+            resultsQuery = resultsQuery.Where(r => r.UnitId == selectedUnitId.Value);
+        }
+        if (filterResult == "success")
+        {
+            resultsQuery = resultsQuery.Where(r => r.WasSuccessful);
+        }
+        else if (filterResult == "cancelled")
+        {
+            resultsQuery = resultsQuery.Where(r => !r.WasSuccessful);
+        }
 
-        if (filterTags.Any())
-            query = query.Where(t => t.TaskTags.Any(tt => filterTags.Contains(tt.Tag.Name)));
-
-        history = query
-          .OrderByDescending(t => t.LastCompletedAt)
-          .Select(t => new CompletedTaskDTO
+        history = resultsQuery
+          .OrderByDescending(r => r.CompletedAt)
+          .Select(r => new CompletedTaskDTO
           {
-              CompletedAt = t.LastCompletedAt.Value,
-              Title = t.Title,
-              Type = t.Type,
-              Duration = t.Type == TaskType.Timer
-                               ? TimeSpan.FromMinutes(t.DurationMinutes)
-                               : (t.LastCompletedAt.Value - t.StartedAt.Value),
-              Tags = t.TaskTags.Select(tt => tt.Tag.Name).ToList(),
-              ExperienceGained = t.QuestResults
-                                .OrderByDescending(r => r.CompletedAt)
-                                .Select(r => r.ExperienceGained)
-                                .FirstOrDefault()             
+              CompletedAt = r.CompletedAt,
+              Title = r.Quest.Name,
+              Type = r.Quest.DurationMinutes > 0 ? TaskType.Timer : TaskType.Tracker,
+              Duration = r.Quest.DurationMinutes > 0
+                         ? TimeSpan.FromMinutes(r.Quest.DurationMinutes)
+                         : TimeSpan.Zero,
+              Tags = Db.Tasks
+                       .Where(t => t.Id == r.Quest.Id)
+                       .SelectMany(t => t.TaskTags)
+                       .Select(tt => tt.Tag.Name)
+                       .ToList(),
+              ExperienceGained = r.ExperienceGained,
+              Loot = r.Loot,
+              UnitName = r.Unit.Name
           })
           .ToList();
     }
@@ -199,35 +247,21 @@
     {
         var end = DateTime.Today;
         var start = end.AddDays(-29);
-        // Compute all days
-        CalendarDays.Clear();
-        for (var d = start; d <= end; d = d.AddDays(1))
-        {
-            CalendarDays.Add(new CalendarDay { Date = d });
-        }
-        // Fetch counts
-        var allResults = Db.QuestResults.ToList();
-        var counts = allResults
-            .Where(q => q.CompletedAt.Date >= start && q.CompletedAt.Date <= end)
-            .GroupBy(q => q.CompletedAt.Date)
-            .ToDictionary(g => g.Key, g => g.Count());
-        foreach (var day in CalendarDays)
-        {
-            if (counts.TryGetValue(day.Date, out var cnt))
-                day.Count = cnt;
-            else
-                day.Count = 0;
-        }
+        var days = Enumerable.Range(0, 30)
+                             .Select(i => start.AddDays(i))
+                             .ToList();
+        var counts = Db.QuestResults
+                       .Where(r => r.CompletedAt.Date >= start && r.CompletedAt.Date <= end)
+                       .GroupBy(r => r.CompletedAt.Date)
+                       .ToDictionary(g => g.Key, g => g.Count());
 
-        // Build weeks aligned Monday
+        var calendar = days.Select(d => new CalendarDay { Date = d, Count = counts.GetValueOrDefault(d, 0) }).ToList();
+
         Weeks.Clear();
         var week = new List<CalendarDay>();
-        // Pad first week until Monday
-        var firstWeekday = ((int)CalendarDays[0].Date.DayOfWeek + 6) % 7; // Monday=0
-        for (int i = 0; i < firstWeekday; i++)
-            week.Add(new CalendarDay { Date = default, Count = -1 });
-
-        foreach (var day in CalendarDays)
+        var pad = ((int)start.DayOfWeek + 6) % 7;
+        for (int i = 0; i < pad; i++) week.Add(new CalendarDay { Count = -1 });
+        foreach (var day in calendar)
         {
             week.Add(day);
             if (week.Count == 7)
@@ -236,35 +270,18 @@
                 week = new List<CalendarDay>();
             }
         }
-        // Pad last week
-        while (week.Count < 7)
-            week.Add(new CalendarDay { Date = default, Count = -1 });
+        while (week.Count < 7) week.Add(new CalendarDay { Count = -1 });
         Weeks.Add(week);
-    }
-
-    private string GetIntensity(int count)
-    {
-        if (count < 0) return "calendar-empty";
-        if (count == 0) return "calendar-0";
-        if (count == 1) return "calendar-1";
-        if (count >= 5) return "calendar-5";
-        if (count >= 3) return "calendar-3";
-        return "calendar-2";
-    }
-
-    private class CalendarDay
-    {
-        public DateTime Date { get; set; }
-        public int Count { get; set; }
     }
 
     private string GetColor(int count) => count switch
     {
-        -1 => "transparent",    // padding cells
-        0 => "#D1D5DB",         // gray-300
-        1 => "#86EFAC",         // green-300
-        >= 5 => "#166534",      // green-700
-        >= 3 => "#059669",      // green-600
-        _ => "#10B981"          // green-500
+        -1 => "transparent",
+        0 => "#D1D5DB",
+        >= 5 => "#166534",
+        >= 3 => "#059669",
+        _ => "#10B981"
     };
+
+    private class CalendarDay { public DateTime Date { get; set; } public int Count { get; set; } }
 }
