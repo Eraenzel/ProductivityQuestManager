@@ -7,7 +7,28 @@
 @inject IJSRuntime JS
 @implements IDisposable
 
-<h2 class="text-xl font-bold mb-4">Your Units</h2>
+<h2 class="text-xl font-bold mb-4">Tavern</h2>
+
+<h3>You have @TaskService.GetQuestPoints() quest points to spend.</h3>
+
+<div class="row">
+    @foreach (var line in TaskService.GetQuestLines())
+    {
+        <div class="col-4 mb-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5 class="card-title">@line.Name</h5>
+                    <p>Cost: @line.RequiredPoints pts</p>
+                    <button class="btn btn-primary"
+                            disabled="@(TaskService.GetQuestPoints() < line.RequiredPoints)"
+                            @onclick="() => Unlock(line.Id)">
+                        Unlock
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
 
 @if (isModalVisible && selectedUnit != null)
 {
@@ -188,6 +209,14 @@ else
     }
 
     private int CalculateThreshold(int level) => 100 + (level - 1) * 50;
+
+    async Task Unlock(int lineId)
+    {
+        var ok = await TaskService.UnlockQuestLineAsync(lineId);
+        if (!ok)
+            /* show error alert */
+            ;
+    }
 
     public void Dispose() => TaskService.OnChange -= Refresh;
 }

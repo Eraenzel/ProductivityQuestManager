@@ -191,6 +191,12 @@ public class TaskManagerService : IDisposable
             Loot = lootItem
         };
 
+        var progress = _db.UserProgress.Single(); // or FirstOrCreate
+        progress.UnspentQuestPoints += xp / 5;   // e.g. 1 point per 5 XP
+        _db.Update(progress);
+        await _db.SaveChangesAsync();
+
+
         unit.Experience += xp;
         bool leveled = _rewardService.TryLevelUp(unit);
         _db.Update(unit);
@@ -606,4 +612,40 @@ public class TaskManagerService : IDisposable
           .OrderByDescending(d => d.CompletedAt)
           .ToList();
     }
+
+    public int GetQuestPoints()
+    {
+        // Pull the single UserProgress row (create one if you prefer)
+        var progress = _db.UserProgress.FirstOrDefault();
+        return progress?.UnspentQuestPoints ?? 0;
+    }
+
+    public List<QuestLine> GetQuestLines() =>
+    _db.QuestLines.OrderBy(q => q.RequiredPoints).ToList();
+
+    public async Task<bool> UnlockQuestLineAsync(int lineId)
+    {
+        var progress = _db.UserProgress.FirstOrDefault()
+                       ?? new UserProgress { UnspentQuestPoints = 0 };
+        var line = _db.QuestLines.Find(lineId);
+        if (line == null || progress.UnspentQuestPoints < line.RequiredPoints)
+            return false;
+
+        // Deduct
+        progress.UnspentQuestPoints -= line.RequiredPoints;
+        _db.Update(progress);
+
+        // Mark this line as “unlocked” for the user. Simplest: add a join table
+        /*_db.UserQuestLines.Add(new UserQuestLine
+        {
+            UserProgressId = progress.Id,
+            QuestLineId = lineId
+        });*/
+
+        await _db.SaveChangesAsync();
+        NotifyStateChanged();
+        return true;
+    }
+
+
 }

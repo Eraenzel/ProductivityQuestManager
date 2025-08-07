@@ -7,6 +7,7 @@
         // Basic info
         public string Name { get; set; } = "";
         public UnitClass Class { get; set; }  // e.g. Warrior, Mage, Rogue
+        public List<QuestCategory> PreferredCategories { get; set; }
         public bool IsActive { get; set; } = false;
 
         // Stats
@@ -30,6 +31,8 @@
         Warrior,
         Mage,
         Archer,
-        Rogue
+        Rogue,
+        Miner,
+        Alchemist
     }
 }

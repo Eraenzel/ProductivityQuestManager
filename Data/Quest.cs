@@ -9,4 +9,7 @@
         public bool IsSuccessful { get; set; }
         public List<QuestResult> Results { get; set; }
     }
+
+    public enum QuestCategory { Gathering, Combat, Exploration, Crafting }
+
 }

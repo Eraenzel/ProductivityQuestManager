@@ -34,7 +34,6 @@
 }
 
 @* start a task *@
-<h2 class="text-xl font-bold mb-4">Start a Task</h2>
 @if (TaskService.Tasks == null)
 {
     <p>Loading tasks...</p>
@@ -45,8 +44,22 @@ else if (!TaskService.Tasks.Any())
 }
 else
 {
+    <h3 class="font-semibold">🎯 Active Unit</h3>
+    @if (TaskService.ActiveUnit != null)
+    {
+        <div class="mb-4 p-2 border rounded bg-gray-100">
+            <strong>@TaskService.ActiveUnit.Name</strong> (Lv @TaskService.ActiveUnit.Level)
+            <div class="mt-1">
+                <span>@TaskService.ActiveUnit.Experience / @TaskService.ActiveUnit.ExperienceToNextLevel XP</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        <p class="text-sm text-red-500 mb-4">No active unit selected. Please add or set one below.</p>
+    }
     <ul class="space-y-3">
-
+        <h2 class="text-xl font-bold mb-4">Start a Task</h2>
         @* available tasks *@   
         @foreach (var task in TaskService.Tasks)
         {

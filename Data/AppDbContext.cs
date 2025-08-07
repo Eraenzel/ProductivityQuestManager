@@ -10,6 +10,8 @@ namespace ProductivityQuestManager.Data
         public DbSet<QuestResult> QuestResults { get; set; }
         public DbSet<Tag> Tags { get; set; }
         public DbSet<TaskTag> TaskTags { get; set; }
+        public DbSet<UserProgress> UserProgress { get; set; }
+        public DbSet<QuestLine> QuestLines { get; set; }
 
 
         public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)

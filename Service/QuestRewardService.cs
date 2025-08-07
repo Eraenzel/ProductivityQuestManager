@@ -29,7 +29,7 @@ namespace ProductivityQuestManager.Service
     {
         private readonly Random _rng = new();
 
-        public int CalculateExperience(TaskType type, int durationMinutes)
+        /*public int CalculateExperience(TaskType type, int durationMinutes)
         {
             // Example: Timer gives more XP than Tracker
             return type switch
@@ -38,6 +38,47 @@ namespace ProductivityQuestManager.Service
                 TaskType.Tracker => 5 * durationMinutes + _rng.Next(0, durationMinutes / 2),
                 _ => 0
             };
+        }*/
+
+        public int CalculateExperience(TaskType type, int durationMinutes)
+        {
+            switch (type)
+            {
+                case TaskType.Timer:
+                    {
+                        // A flat reward for starting a timer (e.g. a Pomodoro) plus a small completion bonus
+                        const int timerBaseXp = 100;
+                        const int timerCompletionXp = 20;
+                        return timerBaseXp + timerCompletionXp;
+                    }
+
+                case TaskType.Tracker:
+                    {
+                        // 1) Basic per‐minute reward
+                        const int xpPerMinute = 5;
+                        int baseXp = xpPerMinute * durationMinutes;
+
+                        // 2) Session bonus for ever using tracker
+                        const int sessionBonus = 10;
+
+                        // 3) Milestone bonuses
+                        int milestoneBonus = durationMinutes >= 60 ? 100  // 1h+
+                                            : durationMinutes >= 30 ? 50   // 30–59m
+                                            : durationMinutes >= 15 ? 25   // 15–29m
+                                            : 0;
+
+                        // 4) (Optional) small random bonus to keep it spicy
+                        int randomBonus = _rng.Next(0, durationMinutes / 5 + 1);
+
+                        return baseXp
+                             + sessionBonus
+                             + milestoneBonus
+                             + randomBonus;
+                    }
+
+                default:
+                    return 0;
+            }
         }
 
         public string GenerateLoot(TaskType type)
